@@ -75,6 +75,10 @@ so the tools always have something real to find.
 from-location is `RESERVE` and holds the SKU; to-location is the SKU's pick face;
 0 < qty ≤ qty at source; on-hand + qty ≤ max; no duplicate open task for the same pick face.
 
+**Approval:** a task moves from `PROPOSED` to `APPROVED` or `REJECTED` only through
+`decide_replenishment_task(task_id, approve, decided_by)`, which the UI/API calls for a human.
+It is deliberately not an MCP tool, so a model can never approve its own proposal.
+
 ## Agent behaviour
 
 - Answers only from tool results; says so when data is missing rather than guessing.

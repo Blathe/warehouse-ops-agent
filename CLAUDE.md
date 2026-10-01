@@ -12,7 +12,7 @@ When introducing a Python or React idiom, explain it briefly, with a .NET compar
 | Layer | Choice |
 |---|---|
 | Backend | Python 3.12+, FastAPI, SQLModel (Pydantic + SQLAlchemy), SQLite locally, Postgres when deployed |
-| Tools | MCP server (official `mcp` Python SDK, FastMCP) exposing warehouse tools |
+| Tools | MCP server (official `mcp` Python SDK v2, `MCPServer`; older docs call it FastMCP) exposing warehouse tools |
 | Agent | Anthropic Python SDK, tool use over the same tool functions, human approval for writes |
 | Tests / evals | pytest for unit + integration tests; an eval harness of 30–50 questions under `backend/evals/` |
 | Front end | React + Vite + TypeScript + Tailwind + shadcn/ui; chat built on shadcn's MessageScroller; floor map view |
@@ -47,6 +47,8 @@ python -m uv sync                     # create .venv and install deps from uv.lo
 python -m uv run seed-db              # reset + fill backend/warehouse.db (--seed, --as-of, --db-url)
 python -m uv run warehouse-mcp        # MCP server on stdio (see docs/claude-desktop.md)
 python -m uv run pytest               # tests
+python -m uv run --no-sync pytest     # same, while Claude Desktop is running the MCP server
+                                      # (it locks warehouse-mcp.exe, so a re-sync would fail)
 python -m uv run ruff check . && python -m uv run ruff format .
 python -m uv run mypy src
 python -m uv add <pkg>                # add a runtime dependency
@@ -62,6 +64,8 @@ python -m uv add --dev <pkg>          # add a dev-only dependency
   Branch names: `feat/...`, `fix/...`, `chore/...`, `docs/...`.
 - **Read-only by default**: query tools use a read-only DB session. The only write tool
   (`create_replenishment_task`) must go through human approval and validate inputs in `services/`.
+- **Approval is human-only**: approving/rejecting a task (`decide_replenishment_task`) is never exposed
+  as an MCP or agent tool, so a model can't approve its own proposal.
 - **Log every tool call** (tool, args, result summary, duration, approval decision) to the `tool_call_log` table.
 - **Seeded fake data is deterministic** (fixed random seed) so tests and evals are reproducible.
 - **Secrets** come from `.env` (see `.env.example`); never commit keys.

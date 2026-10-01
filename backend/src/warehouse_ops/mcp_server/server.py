@@ -2,7 +2,8 @@
 
 Run from backend/:  python -m uv run warehouse-mcp   (stdio, for Claude Desktop or any MCP client)
 
-Each tool is a thin wrapper: open a read-only session, call a service, log the call.
+Each tool is a thin wrapper: open a session (read-only unless the tool writes), call a
+service, log the call.
 Docstrings and parameter descriptions become the tool descriptions the model reads,
 so they are written for the model.
 """
@@ -24,11 +25,12 @@ from sqlmodel import Session
 from warehouse_ops import clock
 from warehouse_ops.db.engine import get_engine, readonly_session
 from warehouse_ops.db.models import ToolCallLog
-from warehouse_ops.services import inventory, picking, replenishment
-from warehouse_ops.services.errors import NotFoundError
+from warehouse_ops.services import inventory, picking, replenishment, replenishment_tasks
+from warehouse_ops.services.errors import NotFoundError, RuleViolationError
 from warehouse_ops.services.schemas import (
     LocalDateTime,
     ReplenishmentNeed,
+    ReplenishmentTaskOut,
     ShortPick,
     StockReport,
 )
@@ -41,6 +43,10 @@ from full pallets in reserve locations (levels 2-3). Location codes are
 zone-aisle-bay-level, e.g. A-03-12-1. Times are warehouse local time."""
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
+# Not destructive (it only adds a PROPOSED task), but clients still ask the user first.
+WRITE = ToolAnnotations(
+    read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
+)
 
 Zone = Literal["A", "B", "C"]
 
@@ -50,16 +56,27 @@ def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MC
     server = MCPServer(name="warehouse-ops", instructions=INSTRUCTIONS)
     session_id = uuid4().hex
 
-    def logged[T](tool: str, args: dict[str, Any], call: Callable[[Session], T]) -> T:
-        """Run ``call`` in a read-only session and record it in tool_call_log."""
+    def logged[T](
+        tool: str, args: dict[str, Any], call: Callable[[Session], T], *, writes: bool = False
+    ) -> T:
+        """Run ``call`` in a session and record it in tool_call_log.
+
+        Read tools get a read-only session; a write tool's session is committed only if
+        the service succeeds.
+        """
         started = time.perf_counter()
         summary = "error"
         try:
-            with readonly_session(engine) as session:
-                result = call(session)
+            if writes:
+                with Session(engine) as session:
+                    result = call(session)
+                    session.commit()
+            else:
+                with readonly_session(engine) as session:
+                    result = call(session)
             summary = _summarize(result)
             return result
-        except NotFoundError as exc:
+        except (NotFoundError, RuleViolationError) as exc:
             summary = f"error: {exc}"
             raise ToolError(str(exc)) from exc
         finally:
@@ -132,6 +149,47 @@ def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MC
             lambda s: replenishment.list_replenishment_needs(
                 s, zone=zone, include_open_demand=include_open_demand
             ),
+        )
+
+    @server.tool(annotations=WRITE)
+    def create_replenishment_task(
+        sku_code: Annotated[str, Field(description="The SKU to move, e.g. 10442.")],
+        from_location: Annotated[
+            str, Field(description="Reserve location holding the pallet, e.g. A-03-12-3.")
+        ],
+        to_location: Annotated[str, Field(description="The SKU's pick face, e.g. A-03-12-1.")],
+        qty: Annotated[int, Field(description="Units to move.", gt=0)],
+        reason: Annotated[str, Field(description="Why, e.g. 'empty after 3 short picks'.")],
+    ) -> ReplenishmentTaskOut:
+        """Propose a replenishment task: move qty of a SKU from a reserve pallet to its pick face.
+
+        Only call this after the user has agreed to the specific move. The task is created
+        as PROPOSED and does nothing until a supervisor approves it in the app; you cannot
+        approve it. It is refused if the source isn't a reserve slot holding the SKU, qty is
+        more than the pallet holds or would put the face over its max, or a task is already
+        open for that face. Use list_replenishment_needs for suggested moves.
+        """
+        args = {
+            "sku_code": sku_code,
+            "from_location": from_location,
+            "to_location": to_location,
+            "qty": qty,
+            "reason": reason,
+        }
+        return logged(
+            "create_replenishment_task",
+            args,
+            lambda s: replenishment_tasks.create_replenishment_task(
+                s,
+                sku_code=sku_code,
+                from_location=from_location,
+                to_location=to_location,
+                qty=qty,
+                reason=reason,
+                created_by="mcp",
+                now=now(),
+            ),
+            writes=True,
         )
 
     return server

@@ -8,7 +8,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, NaiveDatetime, WithJsonSchema
 
-from warehouse_ops.db.models import SkuCategory, Uom
+from warehouse_ops.db.models import ReplenishmentStatus, SkuCategory, Uom
 
 # Warehouse local time, e.g. "2026-06-01T13:00:00". The schema is a plain string on
 # purpose: JSON Schema's "date-time" format requires a UTC offset, so strict MCP
@@ -78,3 +78,19 @@ class ReplenishmentNeed(BaseModel):
     suggested_qty: int  # whole cases, up to max and up to the source pallet's qty
     source: Pallet | None  # oldest reserve pallet; None means no reserve stock
     open_task_id: int | None  # an existing PROPOSED/APPROVED replenishment task
+
+
+class ReplenishmentTaskOut(BaseModel):
+    task_id: int
+    status: ReplenishmentStatus
+    sku_code: str
+    description: str
+    from_location: str
+    to_location: str
+    lpn: str | None
+    qty: int
+    reason: str
+    created_by: str
+    created_at: LocalDateTime
+    approved_by: str | None  # who approved or rejected it
+    decided_at: LocalDateTime | None
