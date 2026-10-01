@@ -19,12 +19,19 @@ from sqlalchemy import Engine
 
 from warehouse_ops import clock
 from warehouse_ops.agent.loop import Agent, AgentStateError, AgentTurn, Conversation
+from warehouse_ops.agent.models import DEFAULT_MODEL, MODEL_OPTIONS, ModelOption, is_supported
 from warehouse_ops.db.engine import BACKEND_DIR, get_engine
 
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
     conversation_id: str | None = None  # omit to start a new conversation
+    model: str | None = None  # see GET /api/models; omit to keep the conversation's model
+
+
+class ModelsResponse(BaseModel):
+    default: str
+    models: list[ModelOption]
 
 
 class ApprovalRequest(BaseModel):
@@ -66,15 +73,21 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/api/models")
+    def models() -> ModelsResponse:
+        return ModelsResponse(default=DEFAULT_MODEL, models=MODEL_OPTIONS)
+
     @app.post("/api/chat")
     def chat(request: ChatRequest) -> AgentTurn:
+        if request.model is not None and not is_supported(request.model):
+            raise HTTPException(422, f"Unsupported model {request.model!r}")
         with lock:
             if request.conversation_id is None:
                 conversation = Conversation()
                 conversations[conversation.id] = conversation
             else:
                 conversation = get_conversation(request.conversation_id)
-            return run(lambda: agent.send(conversation, request.message))
+            return run(lambda: agent.send(conversation, request.message, request.model))
 
     @app.post("/api/conversations/{conversation_id}/approval")
     def approval(conversation_id: str, request: ApprovalRequest) -> AgentTurn:

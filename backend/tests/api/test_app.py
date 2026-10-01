@@ -82,3 +82,29 @@ def test_claude_api_failure_is_502(engine: Engine) -> None:
     fake.messages.create = fail  # type: ignore[method-assign,assignment]
     response = make_client(engine, fake).post("/api/chat", json={"message": "hi"})
     assert response.status_code == 502
+
+
+def test_models_lists_the_choices_with_prices(engine: Engine) -> None:
+    body = make_client(engine, FakeClient()).get("/api/models").json()
+    assert body["default"] == "claude-opus-5-5"
+    ids = [m["id"] for m in body["models"]]
+    assert ids == ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5"]
+    assert all(m["input_per_mtok"] > 0 and m["label"] for m in body["models"])
+
+
+def test_chat_uses_the_requested_model(engine: Engine) -> None:
+    fake = FakeClient(text_reply("Hi"))
+    body = (
+        make_client(engine, fake)
+        .post("/api/chat", json={"message": "hi", "model": "claude-sonnet-5-5"})
+        .json()
+    )
+    assert body["model"] == "claude-sonnet-5-5"
+    assert fake.messages.requests[0]["model"] == "claude-sonnet-5-5"
+
+
+def test_unknown_model_is_422(engine: Engine) -> None:
+    response = make_client(engine, FakeClient()).post(
+        "/api/chat", json={"message": "hi", "model": "nope"}
+    )
+    assert response.status_code == 422

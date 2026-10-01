@@ -9,11 +9,11 @@ from tests.agent.fakes import FakeClient, refusal, text_reply, tool_reply
 from tests.conftest import AS_OF, make_memory_engine
 from warehouse_ops.agent.loop import (
     MAX_STEPS,
-    MODEL,
     Agent,
     AgentStateError,
     Conversation,
 )
+from warehouse_ops.agent.models import DEFAULT_MODEL
 from warehouse_ops.db.models import (
     Approval,
     ReplenishmentStatus,
@@ -86,7 +86,8 @@ def test_read_tool_then_answer(engine: Engine) -> None:
     assert turn.tool_calls[0].ok
 
     first, second = client.messages.requests
-    assert first["model"] == MODEL
+    assert first["model"] == DEFAULT_MODEL
+    assert first["output_config"] == {"effort": "medium"}
     assert first["fallbacks"] == "default" and first["betas"] == ["server-side-fallback-2026-07-01"]
     assert {t["name"] for t in first["tools"]} >= {"find_stock", "create_replenishment_task"}
     assert "[Warehouse time: 2026-06-01 13:00]" in first["messages"][0]["content"]
@@ -234,3 +235,32 @@ def test_runaway_loop_stops(engine: Engine) -> None:
     turn = make_agent(engine, client).send(Conversation(), "Loop forever")
     assert "too many steps" in turn.reply
     assert len(client.messages.requests) == MAX_STEPS
+
+
+def test_switching_models_mid_conversation(engine: Engine) -> None:
+    client = FakeClient(
+        text_reply("Opus here."), text_reply("Haiku here."), text_reply("Still Haiku.")
+    )
+    agent = make_agent(engine, client)
+    conversation = Conversation()
+
+    assert agent.send(conversation, "hi").model == DEFAULT_MODEL
+    assert agent.send(conversation, "cheaper please", model="claude-haiku-4-5").model == (
+        "claude-haiku-4-5"
+    )
+    agent.send(conversation, "and again")  # no model given: keeps Haiku
+
+    opus, haiku, haiku_again = client.messages.requests
+    assert opus["model"] == DEFAULT_MODEL and opus["fallbacks"] == "default"
+    assert haiku["model"] == "claude-haiku-4-5"
+    # Haiku 4.5 rejects effort, and fallbacks are only used on the 5.x models.
+    assert "output_config" not in haiku and "fallbacks" not in haiku and "betas" not in haiku
+    assert haiku_again["model"] == "claude-haiku-4-5"
+    # The whole history goes to the new model.
+    assert len(haiku["messages"]) == 3
+
+
+def test_unknown_model_is_rejected(engine: Engine) -> None:
+    agent = make_agent(engine, FakeClient())
+    with pytest.raises(ValueError, match="Unsupported model"):
+        agent.send(Conversation(), "hi", model="gpt-whatever")

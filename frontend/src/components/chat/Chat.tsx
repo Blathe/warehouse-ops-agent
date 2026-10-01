@@ -32,6 +32,13 @@ interface Entry {
   toolCalls: ToolTrace[]
   pending: PendingAction[] // non-empty while waiting for Approve / Reject
   decision?: string // e.g. "Approved by Pat", shown once decided
+  model?: string // which model wrote an assistant reply
+}
+
+interface ChatProps {
+  supervisor: string
+  model: string | null // null = let the backend use its default
+  modelLabels?: Record<string, string>
 }
 
 const SUGGESTIONS = [
@@ -42,7 +49,7 @@ const SUGGESTIONS = [
 
 let nextId = 1
 
-export function Chat({ supervisor }: { supervisor: string }) {
+export function Chat({ supervisor, model, modelLabels = {} }: ChatProps) {
   // useState is React's per-component state: calling the setter re-renders the
   // component with the new value (roughly a ViewModel property that raises PropertyChanged).
   const [entries, setEntries] = useState<Entry[]>([])
@@ -58,7 +65,13 @@ export function Chat({ supervisor }: { supervisor: string }) {
 
   function addTurn(turn: AgentTurn) {
     setConversationId(turn.conversation_id)
-    add({ role: 'assistant', text: turn.reply, toolCalls: turn.tool_calls, pending: turn.pending })
+    add({
+      role: 'assistant',
+      text: turn.reply,
+      toolCalls: turn.tool_calls,
+      pending: turn.pending,
+      model: modelLabels[turn.model] ?? turn.model,
+    })
   }
 
   async function run(request: () => Promise<AgentTurn>) {
@@ -77,7 +90,7 @@ export function Chat({ supervisor }: { supervisor: string }) {
     if (!message || busy || awaitingApproval) return
     add({ role: 'user', text: message, toolCalls: [], pending: [] })
     setDraft('')
-    void run(() => sendChat(message, conversationId))
+    void run(() => sendChat(message, conversationId, model))
   }
 
   function decide(approve: boolean) {
@@ -178,7 +191,9 @@ function EntryView({
         )}
         <ToolCalls calls={entry.toolCalls} />
       </MessageContent>
-      {entry.decision && <MessageFooter>{entry.decision}</MessageFooter>}
+      {(entry.decision || entry.model) && (
+        <MessageFooter>{[entry.model, entry.decision].filter(Boolean).join(' · ')}</MessageFooter>
+      )}
     </Message>
   )
 }
