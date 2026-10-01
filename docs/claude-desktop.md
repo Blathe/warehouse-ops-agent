@@ -18,13 +18,17 @@
          "args": [
            "-m", "uv",
            "--directory", "F:/Workspace/python/warehouse-ops-agent/backend",
-           "run", "warehouse-mcp"
+           "run", "--no-sync", "python", "-m", "warehouse_ops.mcp_server"
          ],
          "env": { "WAREHOUSE_AS_OF": "2026-06-01T13:00" }
        }
      }
    }
    ```
+
+   `--no-sync` plus `python -m` (instead of the `warehouse-mcp` script) matters on
+   Windows: a running `warehouse-mcp.exe` is locked, and every `uv run` / `uv sync`
+   would then fail trying to reinstall it.
 
    Use forward slashes in the path: JSON treats a single backslash as an escape
    character, so `F:\Workspace` makes the whole file invalid.
