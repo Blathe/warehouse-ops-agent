@@ -9,7 +9,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from tests.conftest import AS_OF, make_memory_engine
-from warehouse_ops.db.models import ToolCallLog
+from warehouse_ops.db.models import ReplenishmentStatus, ReplenishmentTask, ToolCallLog
 from warehouse_ops.db.seed import seed_database
 from warehouse_ops.mcp_server.server import create_server
 
@@ -39,10 +39,21 @@ async def call(client: Client, tool: str, args: dict[str, Any]) -> Any:
 
 async def test_tools_are_listed_as_read_only(client: Client) -> None:
     tools = {t.name: t for t in (await client.list_tools()).tools}
-    assert set(tools) == {"list_short_picks", "find_stock", "list_replenishment_needs"}
-    for tool in tools.values():
+    assert set(tools) == {
+        "list_short_picks",
+        "find_stock",
+        "list_replenishment_needs",
+        "create_replenishment_task",
+    }
+    for name, tool in tools.items():
         assert tool.description
-        assert tool.annotations is not None and tool.annotations.read_only_hint
+        assert tool.annotations is not None
+        assert tool.annotations.read_only_hint == (name != "create_replenishment_task")
+
+
+async def test_there_is_no_tool_to_approve_tasks(client: Client) -> None:
+    names = {t.name for t in (await client.list_tools()).tools}
+    assert not any("approve" in n or "decide" in n for n in names)
 
 
 def _formats(schema: Any) -> list[str]:
@@ -103,3 +114,53 @@ async def test_calls_are_logged(client: Client, engine: Engine) -> None:
     assert last_two[1].result_summary.endswith("results")
     assert '"zone": "B"' in last_two[1].args_json
     assert all(log.ts == AS_OF for log in last_two)
+
+
+async def test_create_replenishment_task_commits_a_proposed_task(
+    client: Client, engine: Engine
+) -> None:
+    needs = (await call(client, "list_replenishment_needs", {}))["result"]
+    need = next(n for n in needs if n["source"] and n["open_task_id"] is None)
+    task = await call(
+        client,
+        "create_replenishment_task",
+        {
+            "sku_code": need["sku_code"],
+            "from_location": need["source"]["location"],
+            "to_location": need["location"],
+            "qty": need["suggested_qty"],
+            "reason": "empty pick face",
+        },
+    )
+    assert task["status"] == "PROPOSED" and task["created_by"] == "mcp"
+
+    with Session(engine) as session:
+        stored = session.get(ReplenishmentTask, task["task_id"])
+        assert stored is not None and stored.status == ReplenishmentStatus.PROPOSED
+
+
+async def test_rule_violations_are_tool_errors_and_write_nothing(
+    client: Client, engine: Engine
+) -> None:
+    with Session(engine) as session:
+        before = len(session.exec(select(ReplenishmentTask)).all())
+
+    needs = (await call(client, "list_replenishment_needs", {}))["result"]
+    need = next(n for n in needs if n["source"])
+    result = await client.call_tool(
+        "create_replenishment_task",
+        {
+            "sku_code": need["sku_code"],
+            "from_location": need["source"]["location"],
+            "to_location": need["location"],
+            "qty": need["max_qty"] + 1,
+            "reason": "too much",
+        },
+    )
+    assert result.is_error
+
+    with Session(engine) as session:
+        assert len(session.exec(select(ReplenishmentTask)).all()) == before
+        last_log = session.exec(select(ToolCallLog)).all()[-1]
+    assert last_log.tool == "create_replenishment_task"
+    assert last_log.result_summary.startswith("error:")
