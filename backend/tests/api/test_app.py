@@ -108,3 +108,11 @@ def test_unknown_model_is_422(engine: Engine) -> None:
         "/api/chat", json={"message": "hi", "model": "nope"}
     )
     assert response.status_code == 422
+
+
+def test_floor_map(engine: Engine) -> None:
+    body = make_client(engine, FakeClient()).get("/api/floor-map").json()
+    assert len(body["bays"]) == 400
+    assert set(body["counts"]) == {"ok", "low", "empty", "unassigned"}
+    first = body["bays"][0]
+    assert first["pick"]["location"] == "A-01-01-1" and len(first["reserve"]) == 2

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 
 import { Chat } from '@/components/chat/Chat'
+import { FloorMap } from '@/components/floor/FloorMap'
 import { ModelPicker } from '@/components/ModelPicker'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getModels, type ModelOption } from '@/lib/api'
 
@@ -29,6 +31,7 @@ export default function App() {
   const [supervisor, setSupervisor] = useState(() => load(NAME_KEY) || 'Supervisor')
   const [models, setModels] = useState<ModelOption[]>([])
   const [model, setModel] = useState<string | null>(null)
+  const [view, setView] = useState<'chat' | 'map'>('chat')
 
   // useEffect runs after the first render; the empty [] means "only once", like an
   // OnInitializedAsync in Blazor. It loads the model list from the backend.
@@ -58,6 +61,19 @@ export default function App() {
           <h1 className="text-base font-semibold">Warehouse Ops Agent</h1>
           <p className="text-xs text-muted-foreground">Short picks and replenishment</p>
         </div>
+        <nav className="flex gap-1" aria-label="View">
+          {(['chat', 'map'] as const).map((v) => (
+            <Button
+              key={v}
+              size="sm"
+              variant={view === v ? 'secondary' : 'ghost'}
+              aria-pressed={view === v}
+              onClick={() => setView(v)}
+            >
+              {v === 'chat' ? 'Chat' : 'Floor map'}
+            </Button>
+          ))}
+        </nav>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
           {model && models.length > 0 && (
             <ModelPicker models={models} value={model} onChange={changeModel} />
@@ -74,7 +90,12 @@ export default function App() {
           </label>
         </div>
       </header>
-      <Chat supervisor={supervisor.trim() || 'Supervisor'} model={model} modelLabels={labels} />
+      {/* Chat stays mounted (just hidden) so the conversation survives switching views;
+          the map mounts fresh each time, so it always shows current stock. */}
+      <div className={view === 'chat' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+        <Chat supervisor={supervisor.trim() || 'Supervisor'} model={model} modelLabels={labels} />
+      </div>
+      {view === 'map' && <FloorMap />}
     </div>
   )
 }

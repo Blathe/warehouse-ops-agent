@@ -83,3 +83,44 @@ export function sendApproval(
     decided_by: decidedBy,
   })
 }
+
+export type PickStatus = 'ok' | 'low' | 'empty' | 'unassigned'
+
+export interface PickSlot {
+  location: string
+  sku_code: string | null
+  description: string | null
+  on_hand: number
+  min_qty: number | null
+  max_qty: number | null
+  status: PickStatus
+  open_task_id: number | null
+}
+
+export interface ReserveSlot {
+  location: string
+  level: number
+  sku_code: string | null
+  lpn: string | null
+  qty: number
+}
+
+export interface Bay {
+  zone: string
+  aisle: number
+  bay: number
+  x: number
+  y: number
+  pick: PickSlot
+  reserve: ReserveSlot[]
+}
+
+export interface FloorMapData {
+  bays: Bay[]
+  staging: { location: string; x: number; y: number }[]
+  counts: Record<PickStatus, number>
+}
+
+export function getFloorMap(): Promise<FloorMapData> {
+  return request('/api/floor-map')
+}

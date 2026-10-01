@@ -13,7 +13,8 @@ export default defineConfig({
   },
   server: {
     // The FastAPI backend; the browser only ever talks to Vite, so no CORS setup is needed.
-    proxy: { '/api': 'http://127.0.0.1:8000' },
+    // Set API_URL to point at a backend on another port.
+    proxy: { '/api': process.env.API_URL ?? 'http://127.0.0.1:8000' },
   },
   test: {
     environment: 'jsdom',
