@@ -5,11 +5,13 @@ defaults to ``backend/warehouse.db``.
 """
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine, event
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine
 
 from warehouse_ops.db import models  # noqa: F401  (registers the tables on SQLModel.metadata)
 
@@ -36,3 +38,31 @@ def reset_db(engine: Engine) -> None:
     """Drop and recreate every table."""
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
+
+
+_READONLY_SQL = {
+    # dialect: (turn read-only on, turn it back off)
+    "sqlite": ("PRAGMA query_only = ON", "PRAGMA query_only = OFF"),
+    "postgresql": (
+        "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY",
+        "SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE",
+    ),
+}
+
+
+@contextmanager
+def readonly_session(engine: Engine) -> Iterator[Session]:
+    """A session the database itself refuses to write through.
+
+    Query tools use this, so even a buggy query can't change data.
+    """
+    on, off = _READONLY_SQL[engine.dialect.name]
+    with engine.connect() as connection:
+        connection.exec_driver_sql(on)
+        try:
+            with Session(bind=connection) as session:
+                yield session
+        finally:
+            # The connection goes back to the pool afterwards, so undo the setting.
+            connection.rollback()
+            connection.exec_driver_sql(off)

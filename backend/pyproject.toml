@@ -9,11 +9,13 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "faker>=40.40.0",
+    "mcp>=2.2.0",
     "sqlmodel>=0.0.47",
 ]
 
 [project.scripts]
 seed-db = "warehouse_ops.db.seed:main"
+warehouse-mcp = "warehouse_ops.mcp_server.server:main"
 
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]

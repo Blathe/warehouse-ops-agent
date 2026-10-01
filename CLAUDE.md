@@ -45,6 +45,7 @@ Run from `backend/`. Always invoke uv as `python -m uv` (it is not on PATH on th
 ```
 python -m uv sync                     # create .venv and install deps from uv.lock
 python -m uv run seed-db              # reset + fill backend/warehouse.db (--seed, --as-of, --db-url)
+python -m uv run warehouse-mcp        # MCP server on stdio (see docs/claude-desktop.md)
 python -m uv run pytest               # tests
 python -m uv run ruff check . && python -m uv run ruff format .
 python -m uv run mypy src
