@@ -39,6 +39,7 @@ interface ChatProps {
   supervisor: string
   model: string | null // null = let the backend use its default
   modelLabels?: Record<string, string>
+  onTurn?: (turn: AgentTurn) => void // after every agent response, e.g. to refresh the map
 }
 
 const SUGGESTIONS = [
@@ -49,7 +50,7 @@ const SUGGESTIONS = [
 
 let nextId = 1
 
-export function Chat({ supervisor, model, modelLabels = {} }: ChatProps) {
+export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps) {
   // useState is React's per-component state: calling the setter re-renders the
   // component with the new value (roughly a ViewModel property that raises PropertyChanged).
   const [entries, setEntries] = useState<Entry[]>([])
@@ -72,6 +73,7 @@ export function Chat({ supervisor, model, modelLabels = {} }: ChatProps) {
       pending: turn.pending,
       model: modelLabels[turn.model] ?? turn.model,
     })
+    onTurn?.(turn)
   }
 
   async function run(request: () => Promise<AgentTurn>) {
@@ -190,10 +192,12 @@ function EntryView({
           <ApprovalCard actions={entry.pending} busy={busy} onDecide={onDecide} />
         )}
         <ToolCalls calls={entry.toolCalls} />
+        {(entry.decision || entry.model) && (
+          <MessageFooter className="px-0">
+            {[entry.model, entry.decision].filter(Boolean).join(' · ')}
+          </MessageFooter>
+        )}
       </MessageContent>
-      {(entry.decision || entry.model) && (
-        <MessageFooter>{[entry.model, entry.decision].filter(Boolean).join(' · ')}</MessageFooter>
-      )}
     </Message>
   )
 }
