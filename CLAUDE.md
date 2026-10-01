@@ -46,6 +46,7 @@ Run from `backend/`. Always invoke uv as `python -m uv` (it is not on PATH on th
 python -m uv sync                     # create .venv and install deps from uv.lock
 python -m uv run seed-db              # reset + fill backend/warehouse.db (--seed, --as-of, --db-url)
 python -m uv run warehouse-mcp        # MCP server on stdio (see docs/claude-desktop.md)
+python -m uv run warehouse-api        # FastAPI + agent on http://127.0.0.1:8000 (reads ../.env)
 python -m uv run pytest               # tests
 python -m uv run --no-sync pytest     # same, while Claude Desktop is running the MCP server
                                       # (it locks warehouse-mcp.exe, so a re-sync would fail)
@@ -53,6 +54,7 @@ python -m uv run ruff check . && python -m uv run ruff format .
 python -m uv run mypy src
 python -m uv add <pkg>                # add a runtime dependency
 python -m uv add --dev <pkg>          # add a dev-only dependency
+python -m uv sync --no-install-project --inexact  # install new deps while the MCP server is running
 ```
 
 ## Rules

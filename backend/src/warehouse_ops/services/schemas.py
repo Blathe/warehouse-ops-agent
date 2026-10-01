@@ -4,7 +4,7 @@ These are plain Pydantic models, not tables: the shape a caller needs, joined an
 flattened, rather than the shape the data is stored in.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, NaiveDatetime, WithJsonSchema
 
@@ -19,6 +19,9 @@ LocalDateTime = Annotated[
         {"type": "string", "description": "Warehouse local time, ISO 8601 without offset"}
     ),
 ]
+
+
+Zone = Literal["A", "B", "C"]
 
 
 class ShortPick(BaseModel):
