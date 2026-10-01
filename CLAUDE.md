@@ -1,0 +1,66 @@
+# Warehouse Ops Agent
+
+Portfolio project: a Claude-powered agent that helps a warehouse supervisor handle
+**short picks and replenishment**, through MCP tools over a realistic warehouse database.
+The product spec is [docs/spec.md](docs/spec.md); read it before changing the data model or tools.
+
+The owner (Scott) comes from C#/.NET MVC + MySQL and is learning Python and React.
+When introducing a Python or React idiom, explain it briefly, with a .NET comparison when one helps.
+
+## Stack
+
+| Layer | Choice |
+|---|---|
+| Backend | Python 3.12+, FastAPI, SQLModel (Pydantic + SQLAlchemy), SQLite locally, Postgres when deployed |
+| Tools | MCP server (official `mcp` Python SDK, FastMCP) exposing warehouse tools |
+| Agent | Anthropic Python SDK, tool use over the same tool functions, human approval for writes |
+| Tests / evals | pytest for unit + integration tests; an eval harness of 30–50 questions under `backend/evals/` |
+| Front end | React + Vite + TypeScript + Tailwind + shadcn/ui; chat built on shadcn's MessageScroller; floor map view |
+| Tooling | uv (packages, venv, lockfile), ruff (lint + format), mypy (types) |
+
+## Layout
+
+```
+backend/
+  pyproject.toml            # deps + tool config (uv)
+  src/warehouse_ops/
+    db/                     # SQLModel tables, engine, seed / fake-data generator
+    services/               # plain functions with the business logic (queries, validation)
+    mcp_server/             # MCP tool wrappers around services/
+    agent/                  # Claude agent loop, approval flow, tool-call logging
+    api/                    # FastAPI app for the front end
+  tests/                    # pytest, mirrors src/ layout
+  evals/                    # eval questions (YAML/JSON) + runner
+frontend/                   # React app (added in the agent + chat UI phase)
+docs/                       # spec, ADRs, write-up drafts
+```
+
+Business logic lives in `services/`. MCP tools, the agent, and the API are thin wrappers,
+so each rule is written and tested once.
+
+## Commands
+
+Run from `backend/`. Always invoke uv as `python -m uv` (it is not on PATH on this machine).
+
+```
+python -m uv sync                     # create .venv and install deps from uv.lock
+python -m uv run pytest               # tests
+python -m uv run ruff check . && python -m uv run ruff format .
+python -m uv run mypy src
+python -m uv add <pkg>                # add a runtime dependency
+python -m uv add --dev <pkg>          # add a dev-only dependency
+```
+
+## Rules
+
+- **Type hints on every function** (params and return). `mypy src` should pass.
+- **Every feature ships with tests.** Services get unit tests against a seeded in-memory SQLite DB;
+  tools get at least one test proving the wrapper calls the service correctly.
+- **Small PRs**: one feature per branch/PR (e.g. "add pick_face table + seed", "add list_short_picks tool").
+  Branch names: `feat/...`, `fix/...`, `chore/...`, `docs/...`.
+- **Read-only by default**: query tools use a read-only DB session. The only write tool
+  (`create_replenishment_task`) must go through human approval and validate inputs in `services/`.
+- **Log every tool call** (tool, args, result summary, duration, approval decision) to the `tool_call_log` table.
+- **Seeded fake data is deterministic** (fixed random seed) so tests and evals are reproducible.
+- **Secrets** come from `.env` (see `.env.example`); never commit keys.
+- Add a dependency only in the PR that first uses it.

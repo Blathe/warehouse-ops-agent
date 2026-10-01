@@ -1,0 +1,42 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# --- Local data (regenerate with the seed script) ---
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# --- Agent / eval output ---
+logs/
+backend/evals/results/
+
+# --- Node / front end ---
+node_modules/
+frontend/dist/
+.vite/
+
+# --- Secrets: commit .env.example, never .env ---
+.env
+.env.*
+!.env.example
+
+# --- Editors / OS ---
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Claude Code local settings ---
+.claude/settings.local.json
