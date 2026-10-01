@@ -26,7 +26,12 @@ from warehouse_ops.db.engine import get_engine, readonly_session
 from warehouse_ops.db.models import ToolCallLog
 from warehouse_ops.services import inventory, picking, replenishment
 from warehouse_ops.services.errors import NotFoundError
-from warehouse_ops.services.schemas import ReplenishmentNeed, ShortPick, StockReport
+from warehouse_ops.services.schemas import (
+    LocalDateTime,
+    ReplenishmentNeed,
+    ShortPick,
+    StockReport,
+)
 
 INSTRUCTIONS = """\
 Tools for a fishing tackle distribution warehouse. Zone A holds small tackle (lures,
@@ -74,7 +79,7 @@ def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MC
     @server.tool(annotations=READ_ONLY)
     def list_short_picks(
         since: Annotated[
-            datetime | None,
+            LocalDateTime | None,
             Field(description="Start time, e.g. 2026-06-01T06:00. Defaults to 24 hours ago."),
         ] = None,
         zone: Annotated[Zone | None, Field(description="Only this zone.")] = None,

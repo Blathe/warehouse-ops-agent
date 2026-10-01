@@ -45,6 +45,28 @@ async def test_tools_are_listed_as_read_only(client: Client) -> None:
         assert tool.annotations is not None and tool.annotations.read_only_hint
 
 
+def _formats(schema: Any) -> list[str]:
+    """Every "format" keyword anywhere in a JSON schema."""
+    if isinstance(schema, dict):
+        found = [schema["format"]] if isinstance(schema.get("format"), str) else []
+        return found + [f for value in schema.values() for f in _formats(value)]
+    if isinstance(schema, list):
+        return [f for item in schema for f in _formats(item)]
+    return []
+
+
+async def test_schemas_do_not_declare_date_time_format(client: Client) -> None:
+    # Naive local times would fail strict clients' "date-time" (RFC 3339) validation.
+    for tool in (await client.list_tools()).tools:
+        assert "date-time" not in _formats(tool.input_schema), tool.name
+        assert "date-time" not in _formats(tool.output_schema), tool.name
+
+
+async def test_since_accepts_local_time(client: Client) -> None:
+    rows = (await call(client, "list_short_picks", {"since": "2026-05-30T06:00"}))["result"]
+    assert rows
+
+
 async def test_list_short_picks(client: Client) -> None:
     rows = (await call(client, "list_short_picks", {"zone": "A"}))["result"]
     assert rows and all(r["zone"] == "A" for r in rows)

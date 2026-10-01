@@ -4,14 +4,26 @@ These are plain Pydantic models, not tables: the shape a caller needs, joined an
 flattened, rather than the shape the data is stored in.
 """
 
-from pydantic import BaseModel, NaiveDatetime
+from typing import Annotated
+
+from pydantic import BaseModel, NaiveDatetime, WithJsonSchema
 
 from warehouse_ops.db.models import SkuCategory, Uom
+
+# Warehouse local time, e.g. "2026-06-01T13:00:00". The schema is a plain string on
+# purpose: JSON Schema's "date-time" format requires a UTC offset, so strict MCP
+# clients reject naive times that are declared as "date-time".
+LocalDateTime = Annotated[
+    NaiveDatetime,
+    WithJsonSchema(
+        {"type": "string", "description": "Warehouse local time, ISO 8601 without offset"}
+    ),
+]
 
 
 class ShortPick(BaseModel):
     task_id: int
-    completed_at: NaiveDatetime
+    completed_at: LocalDateTime
     order_number: str
     location: str
     zone: str
@@ -42,7 +54,7 @@ class Pallet(BaseModel):
     location: str
     lpn: str
     qty: int
-    received_at: NaiveDatetime
+    received_at: LocalDateTime
 
 
 class StockReport(BaseModel):
