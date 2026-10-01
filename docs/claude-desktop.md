@@ -17,7 +17,7 @@
          "command": "python",
          "args": [
            "-m", "uv",
-           "--directory", "F:\Workspace\python\warehouse-ops-agent\backend",
+           "--directory", "F:/Workspace/python/warehouse-ops-agent/backend",
            "run", "warehouse-mcp"
          ],
          "env": { "WAREHOUSE_AS_OF": "2026-06-01T13:00" }
@@ -25,6 +25,9 @@
      }
    }
    ```
+
+   Use forward slashes in the path: JSON treats a single backslash as an escape
+   character, so `F:\Workspace` makes the whole file invalid.
 
 3. Restart Claude Desktop and try:
    - "Any short picks in zone A today?"
