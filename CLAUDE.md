@@ -57,6 +57,13 @@ python -m uv add --dev <pkg>          # add a dev-only dependency
 python -m uv sync --no-install-project --inexact  # install new deps while the MCP server is running
 ```
 
+Front end, from `frontend/` (details in `frontend/README.md`):
+
+```
+npm install && npm run dev            # http://localhost:5173, proxies /api to the backend on :8000
+npm test && npm run lint && npm run typecheck
+```
+
 ## Rules
 
 - **Type hints on every function** (params and return). `mypy src` should pass.
