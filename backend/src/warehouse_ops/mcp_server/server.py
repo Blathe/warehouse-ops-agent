@@ -8,23 +8,21 @@ Docstrings and parameter descriptions become the tool descriptions the model rea
 so they are written for the model.
 """
 
-import json
 import time
 from collections.abc import Callable
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 from uuid import uuid4
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlalchemy import Engine
 from sqlmodel import Session
 
 from warehouse_ops import clock
 from warehouse_ops.db.engine import get_engine, readonly_session
-from warehouse_ops.db.models import ToolCallLog
 from warehouse_ops.services import inventory, picking, replenishment, replenishment_tasks
 from warehouse_ops.services.errors import NotFoundError, RuleViolationError
 from warehouse_ops.services.schemas import (
@@ -33,22 +31,17 @@ from warehouse_ops.services.schemas import (
     ReplenishmentTaskOut,
     ShortPick,
     StockReport,
+    Zone,
 )
+from warehouse_ops.tool_log import WAREHOUSE_CONTEXT, record_tool_call, summarize
 
-INSTRUCTIONS = """\
-Tools for a fishing tackle distribution warehouse. Zone A holds small tackle (lures,
-soft plastics, hooks, line), zone B rods and reels, zone C bulky gear (coolers, nets,
-waders, electronics). Each SKU has one pick face (level 1) with a min/max, refilled
-from full pallets in reserve locations (levels 2-3). Location codes are
-zone-aisle-bay-level, e.g. A-03-12-1. Times are warehouse local time."""
+INSTRUCTIONS = "Tools for the warehouse. " + WAREHOUSE_CONTEXT
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 # Not destructive (it only adds a PROPOSED task), but clients still ask the user first.
 WRITE = ToolAnnotations(
     read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
 )
-
-Zone = Literal["A", "B", "C"]
 
 
 def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MCPServer:
@@ -74,24 +67,21 @@ def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MC
             else:
                 with readonly_session(engine) as session:
                     result = call(session)
-            summary = _summarize(result)
+            summary = summarize(result)
             return result
         except (NotFoundError, RuleViolationError) as exc:
             summary = f"error: {exc}"
             raise ToolError(str(exc)) from exc
         finally:
-            with Session(engine) as session:
-                session.add(
-                    ToolCallLog(
-                        ts=now(),
-                        session_id=session_id,
-                        tool=tool,
-                        args_json=json.dumps(args, default=str),
-                        result_summary=summary,
-                        duration_ms=round((time.perf_counter() - started) * 1000),
-                    )
-                )
-                session.commit()
+            record_tool_call(
+                engine,
+                ts=now(),
+                session_id=session_id,
+                tool=tool,
+                args=args,
+                summary=summary,
+                duration_ms=round((time.perf_counter() - started) * 1000),
+            )
 
     @server.tool(annotations=READ_ONLY)
     def list_short_picks(
@@ -193,14 +183,6 @@ def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MC
         )
 
     return server
-
-
-def _summarize(result: object) -> str:
-    if isinstance(result, list):
-        return f"{len(result)} results"
-    if isinstance(result, BaseModel):
-        return result.model_dump_json()[:200]
-    return str(result)[:200]
 
 
 def main() -> None:

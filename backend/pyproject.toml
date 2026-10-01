@@ -8,14 +8,19 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=1.11.0",
     "faker>=40.40.0",
+    "fastapi>=0.142.2",
     "mcp>=2.2.0",
+    "python-dotenv>=1.2.4",
     "sqlmodel>=0.0.47",
+    "uvicorn>=0.54.0",
 ]
 
 [project.scripts]
 seed-db = "warehouse_ops.db.seed:main"
 warehouse-mcp = "warehouse_ops.mcp_server.server:main"
+warehouse-api = "warehouse_ops.api.app:main"
 
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]
