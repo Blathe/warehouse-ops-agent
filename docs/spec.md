@@ -1,4 +1,16 @@
-# Warehouse Ops Agent: Spec (v0.1)
+# Warehouse Ops Agent: Spec (v0.2)
+
+## Business
+
+The warehouse is the distribution centre for a **fishing tackle and gear** wholesaler/e-commerce brand.
+It ships to independent tackle shops, sporting goods retailers, and direct-to-consumer web orders.
+Demand is seasonal (spring opener and summer peak), which is when pick faces run dry fastest.
+
+| Zone | Products | Storage notes |
+|---|---|---|
+| A: Small tackle | Lures, soft plastics, hooks, sinkers, swivels, line spools | Shelving/bin pick faces, high velocity, packs of 6–50 per case |
+| B: Rods & reels | Spinning/baitcasting/fly rods, reels, rod & reel combos | Rod racks for long items, low case qty (1–6) |
+| C: Bulky gear | Tackle boxes, landing nets, coolers, waders, fish finders | Floor-level pick faces, pallet reserve, low velocity |
 
 ## Problem
 
@@ -27,7 +39,9 @@ and the agent answers from live data, then proposes replenishment moves that the
 
 ## Data model (SQLModel tables)
 
-- **sku**: id, sku_code, description, uom, case_qty, velocity_class (A/B/C)
+- **sku**: id, sku_code, description, brand, category (`LURE` / `SOFT_PLASTIC` / `TERMINAL_TACKLE` / `LINE` /
+  `ROD` / `REEL` / `COMBO` / `TACKLE_STORAGE` / `NET` / `COOLER` / `APPAREL` / `ELECTRONICS`), uom (`EA` / `PK` / `SPOOL`),
+  case_qty, velocity_class (A/B/C)
 - **location**: id, code (`A-03-12-1` = zone-aisle-bay-level), zone, aisle, bay, level,
   type (`PICK` / `RESERVE` / `STAGING`), x, y (for the floor map)
 - **pick_face**: location_id (PK), sku_id, min_qty, max_qty
@@ -41,8 +55,10 @@ and the agent answers from live data, then proposes replenishment moves that the
   status (`PROPOSED` / `APPROVED` / `REJECTED` / `DONE`), created_by, approved_by, created_at, decided_at
 - **tool_call_log**: id, ts, session_id, tool, args_json, result_summary, duration_ms, approval (`n/a` / `approved` / `rejected`)
 
-**Seed data** (deterministic, Faker with a fixed seed): ~300 SKUs, 3 zones,
-~400 pick faces + ~800 reserve slots, ~200 orders/day over 3 days, 15 pickers.
+**Seed data** (deterministic, Faker with a fixed seed): ~300 fishing SKUs built from
+brand × category × variant word lists (e.g. "Shad Crankbait 2in Firetiger", "7ft Medium Spinning Rod",
+"20lb Braided Line 150yd"), fictional brand names, customers that are tackle shops / sporting goods stores / web orders,
+3 zones as above, ~400 pick faces + ~800 reserve slots, ~200 orders/day over 3 days, 15 pickers.
 Roughly 3–5% of pick faces are planted below min, and some of those produce short picks,
 so the tools always have something real to find.
 
@@ -68,7 +84,7 @@ from-location is `RESERVE` and holds the SKU; to-location is the SKU's pick face
 
 Example conversation:
 > **Supervisor:** Any short picks in zone A since 6am?
-> **Agent:** 4 short picks, 3 of them on SKU 10442 at A-03-12-1 (expected 24, picked 6 in total). Pick face is at 0 / min 12. There's a pallet of 96 in reserve at A-03-12-4. Propose moving 48 to fill to max?
+> **Agent:** 4 short picks, 3 of them on SKU 10442 (2.5in Shad Crankbait, Firetiger) at A-03-12-1 (expected 24, picked 6 in total). Pick face is at 0 / min 12. There's a pallet of 96 in reserve at A-03-12-4. Propose moving 48 to fill to max?
 > **Supervisor:** yes → *approval card* → Approve → task #57 created.
 
 ## Evals (30–50 questions)

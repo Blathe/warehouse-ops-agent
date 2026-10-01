@@ -1,7 +1,7 @@
 # Warehouse Ops Agent
 
 Portfolio project: a Claude-powered agent that helps a warehouse supervisor handle
-**short picks and replenishment**, through MCP tools over a realistic warehouse database.
+**short picks and replenishment**, through MCP tools over a realistic database for a fishing tackle and gear warehouse.
 The product spec is [docs/spec.md](docs/spec.md); read it before changing the data model or tools.
 
 The owner (Scott) comes from C#/.NET MVC + MySQL and is learning Python and React.
