@@ -8,6 +8,7 @@ import { Chat } from './Chat'
 function turn(overrides: Partial<AgentTurn>): AgentTurn {
   return {
     conversation_id: 'conv_1',
+    model: 'claude-opus-5-5',
     status: 'done',
     reply: '',
     pending: [],
@@ -61,7 +62,7 @@ describe('Chat', () => {
         ],
       }),
     })
-    render(<Chat supervisor="Pat" />)
+    render(<Chat supervisor="Pat" model={null} />)
 
     await userEvent.type(screen.getByLabelText('Message'), 'What needs replenishing?{Enter}')
 
@@ -72,6 +73,7 @@ describe('Chat', () => {
     expect(requestBody(fetchMock, 0)).toEqual({
       message: 'What needs replenishing?',
       conversation_id: null,
+      model: null,
     })
   })
 
@@ -80,13 +82,13 @@ describe('Chat', () => {
       { body: turn({ status: 'needs_approval', reply: 'Refilling A-03-04-1.', pending: [pendingMove] }) },
       { body: turn({ reply: 'Task #18 is approved.' }) },
     )
-    render(<Chat supervisor="Pat" />)
+    render(<Chat supervisor="Pat" model={null} />)
 
     await userEvent.type(screen.getByLabelText('Message'), 'Refill it{Enter}')
     await userEvent.click(await screen.findByRole('button', { name: 'Approve' }))
 
     expect(await screen.findByText('Task #18 is approved.')).toBeInTheDocument()
-    expect(screen.getByText('Approved by Pat')).toBeInTheDocument()
+    expect(screen.getByText('claude-opus-5-5 · Approved by Pat')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
     expect(fetchMock.mock.calls[1][0]).toBe('/api/conversations/conv_1/approval')
     expect(requestBody(fetchMock, 1)).toEqual({ approve: true, decided_by: 'Pat' })
@@ -94,7 +96,7 @@ describe('Chat', () => {
 
   it('blocks new messages while a task is waiting for approval', async () => {
     mockFetch({ body: turn({ status: 'needs_approval', pending: [pendingMove] }) })
-    render(<Chat supervisor="Pat" />)
+    render(<Chat supervisor="Pat" model={null} />)
     await userEvent.type(screen.getByLabelText('Message'), 'Refill it{Enter}')
     await screen.findByRole('button', { name: 'Approve' })
     expect(screen.getByLabelText('Message')).toBeDisabled()
@@ -102,7 +104,7 @@ describe('Chat', () => {
 
   it('shows API errors', async () => {
     mockFetch({ status: 502, body: { detail: 'Could not reach the Claude API' } })
-    render(<Chat supervisor="Pat" />)
+    render(<Chat supervisor="Pat" model={null} />)
     await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
     expect(await screen.findByText('Could not reach the Claude API')).toBeInTheDocument()
   })

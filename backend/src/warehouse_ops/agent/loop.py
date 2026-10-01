@@ -20,7 +20,6 @@ from uuid import uuid4
 from anthropic import Anthropic
 from anthropic.types.beta import (
     BetaMessageParam,
-    BetaOutputConfigParam,
     BetaToolResultBlockParam,
     BetaToolUseBlock,
 )
@@ -29,19 +28,15 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 from warehouse_ops import clock
+from warehouse_ops.agent.models import DEFAULT_MODEL, is_supported, request_options
 from warehouse_ops.agent.tools import TOOLS, ToolContext
 from warehouse_ops.db.engine import readonly_session
 from warehouse_ops.db.models import Approval
 from warehouse_ops.services.errors import NotFoundError, RuleViolationError
 from warehouse_ops.tool_log import WAREHOUSE_CONTEXT, record_tool_call, summarize
 
-MODEL = "claude-opus-5-5"
 MAX_TOKENS = 16000
-# Opus 5.5's default effort, set explicitly; raise it if answers get sloppy.
-OUTPUT_CONFIG: BetaOutputConfigParam = {"effort": "medium"}
 MAX_STEPS = 12  # model calls per user message, a guard against runaway loops
-# On a safety decline, the API re-runs the request on a fallback model it picks.
-FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 SYSTEM_PROMPT = f"""\
 You help a shift supervisor at a warehouse deal with short picks and replenishment.
@@ -81,6 +76,7 @@ class PendingAction(BaseModel):
 
 class AgentTurn(BaseModel):
     conversation_id: str
+    model: str
     status: Literal["done", "needs_approval"]
     reply: str
     pending: list[PendingAction] = []
@@ -94,6 +90,9 @@ class Conversation:
     # While waiting for approval: the write calls, and results of reads from the same turn.
     pending_calls: list[BetaToolUseBlock] = field(default_factory=list)
     pending_results: list[BetaToolResultBlockParam] = field(default_factory=list)
+    # Can change between messages. Thinking blocks from another model are simply
+    # ignored by the API, so switching mid-conversation is safe.
+    model: str = DEFAULT_MODEL
 
 
 class Agent:
@@ -102,17 +101,22 @@ class Agent:
         client: Anthropic,
         engine: Engine,
         now: Callable[[], datetime] = clock.now,
-        model: str = MODEL,
     ) -> None:
         self._client = client
         self._engine = engine
         self._now = now
-        self._model = model
 
-    def send(self, conversation: Conversation, text: str) -> AgentTurn:
-        """Add a user message and run until Claude answers or asks to write."""
+    def send(self, conversation: Conversation, text: str, model: str | None = None) -> AgentTurn:
+        """Add a user message and run until Claude answers or asks to write.
+
+        ``model`` switches the conversation to another supported model from here on.
+        """
         if conversation.pending_calls:
             raise AgentStateError("Approve or reject the pending action first")
+        if model is not None:
+            if not is_supported(model):
+                raise ValueError(f"Unsupported model {model!r}")
+            conversation.model = model
         conversation.messages.append(
             {"role": "user", "content": f"[Warehouse time: {self._now():%Y-%m-%d %H:%M}]\n{text}"}
         )
@@ -138,14 +142,12 @@ class Agent:
     def _run(self, conversation: Conversation, traces: list[ToolTrace]) -> AgentTurn:
         for _ in range(MAX_STEPS):
             response = self._client.beta.messages.create(
-                model=self._model,
+                model=conversation.model,
                 max_tokens=MAX_TOKENS,
                 system=SYSTEM_PROMPT,
                 tools=TOOL_PARAMS,
                 messages=conversation.messages,
-                output_config=OUTPUT_CONFIG,
-                betas=[FALLBACK_BETA],
-                fallbacks="default",
+                **request_options(conversation.model),
             )
             text = "\n".join(b.text for b in response.content if b.type == "text").strip()
 
@@ -275,7 +277,11 @@ class Agent:
         traces: list[ToolTrace],
     ) -> AgentTurn:
         return AgentTurn(
-            conversation_id=conversation.id, status=status, reply=reply, tool_calls=traces
+            conversation_id=conversation.id,
+            model=conversation.model,
+            status=status,
+            reply=reply,
+            tool_calls=traces,
         )
 
 

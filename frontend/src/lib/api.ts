@@ -19,20 +19,37 @@ export interface PendingAction {
 
 export interface AgentTurn {
   conversation_id: string
+  model: string
   status: 'done' | 'needs_approval'
   reply: string
   pending: PendingAction[]
   tool_calls: ToolTrace[]
 }
 
+export interface ModelOption {
+  id: string
+  label: string
+  input_per_mtok: number // USD per million input tokens
+  output_per_mtok: number
+}
+
+export interface ModelsResponse {
+  default: string
+  models: ModelOption[]
+}
+
 export class ApiError extends Error {}
 
 async function post<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, {
+  return request(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+}
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init)
   if (!response.ok) {
     // FastAPI errors look like {"detail": "..."}; validation errors have a list instead.
     const data: unknown = await response.json().catch(() => null)
@@ -44,8 +61,16 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   return (await response.json()) as T
 }
 
-export function sendChat(message: string, conversationId: string | null): Promise<AgentTurn> {
-  return post('/api/chat', { message, conversation_id: conversationId })
+export function getModels(): Promise<ModelsResponse> {
+  return request('/api/models')
+}
+
+export function sendChat(
+  message: string,
+  conversationId: string | null,
+  model: string | null,
+): Promise<AgentTurn> {
+  return post('/api/chat', { message, conversation_id: conversationId, model })
 }
 
 export function sendApproval(
