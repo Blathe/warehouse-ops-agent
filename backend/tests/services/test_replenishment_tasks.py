@@ -16,6 +16,7 @@ from warehouse_ops.services.replenishment_tasks import (
     create_replenishment_task,
     decide_replenishment_task,
     get_replenishment_task,
+    list_replenishment_tasks,
 )
 from warehouse_ops.services.schemas import ReplenishmentNeed
 
@@ -187,3 +188,36 @@ def test_decide_unknown_task(session: Session) -> None:
         decide_replenishment_task(
             session, task_id=999_999, approve=True, decided_by="Pat", now=AS_OF
         )
+
+
+def test_list_returns_every_status_newest_first(session: Session) -> None:
+    everything = list_replenishment_tasks(session)
+
+    assert {t.status for t in everything} >= {
+        ReplenishmentStatus.APPROVED,
+        ReplenishmentStatus.DONE,
+    }  # the seed has open and finished tasks
+    created = [t.created_at for t in everything]
+    assert created == sorted(created, reverse=True)
+
+
+def test_list_can_be_narrowed_by_status(session: Session) -> None:
+    open_statuses = (ReplenishmentStatus.PROPOSED, ReplenishmentStatus.APPROVED)
+    active = list_replenishment_tasks(session, open_statuses)
+    done = list_replenishment_tasks(session, (ReplenishmentStatus.DONE,))
+
+    assert active and all(t.status in open_statuses for t in active)
+    assert done and all(t.status == ReplenishmentStatus.DONE for t in done)
+    assert len(active) + len(done) <= len(list_replenishment_tasks(session))
+
+
+def test_list_includes_a_new_proposal(session: Session) -> None:
+    task = create_replenishment_task(session, **_valid_args(_actionable_need(session)))
+
+    active = list_replenishment_tasks(session, (ReplenishmentStatus.PROPOSED,))
+
+    assert [t.task_id for t in active] == [task.task_id]
+
+
+def test_list_honours_the_limit(session: Session) -> None:
+    assert len(list_replenishment_tasks(session, limit=3)) == 3

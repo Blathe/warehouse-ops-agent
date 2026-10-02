@@ -9,6 +9,7 @@ must run as a single process.
 from collections.abc import Callable
 from datetime import datetime
 from threading import Lock
+from typing import Literal
 
 import anthropic
 import uvicorn
@@ -21,7 +22,20 @@ from warehouse_ops import clock
 from warehouse_ops.agent.loop import Agent, AgentStateError, AgentTurn, Conversation
 from warehouse_ops.agent.models import DEFAULT_MODEL, MODEL_OPTIONS, ModelOption, is_supported
 from warehouse_ops.db.engine import BACKEND_DIR, get_engine, readonly_session
+from warehouse_ops.db.models import ReplenishmentStatus
+from warehouse_ops.services import replenishment_tasks
 from warehouse_ops.services.floor_map import FloorMap, get_floor_map
+from warehouse_ops.services.replenishment import OPEN_REPLENISHMENT_STATUSES
+from warehouse_ops.services.schemas import ReplenishmentTaskOut
+
+# "active" = still to be done: waiting for approval, or approved and not finished.
+TaskFilter = Literal["active", "done", "rejected", "all"]
+TASK_FILTERS: dict[TaskFilter, tuple[ReplenishmentStatus, ...] | None] = {
+    "active": OPEN_REPLENISHMENT_STATUSES,
+    "done": (ReplenishmentStatus.DONE,),
+    "rejected": (ReplenishmentStatus.REJECTED,),
+    "all": None,
+}
 
 
 class ChatRequest(BaseModel):
@@ -79,6 +93,11 @@ def create_app(
     def floor_map() -> FloorMap:
         with readonly_session(engine) as session:
             return get_floor_map(session)
+
+    @app.get("/api/tasks")
+    def tasks(status: TaskFilter = "active") -> list[ReplenishmentTaskOut]:
+        with readonly_session(engine) as session:
+            return replenishment_tasks.list_replenishment_tasks(session, TASK_FILTERS[status])
 
     @app.get("/api/models")
     def models() -> ModelsResponse:
