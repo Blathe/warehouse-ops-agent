@@ -41,9 +41,28 @@ const floorMap = {
 
 let chatReply: unknown
 
+const activeTasks = [
+  {
+    task_id: 17,
+    status: 'APPROVED',
+    sku_code: '58368',
+    description: 'Hollow Pine Circle Hook 2/0 25pk',
+    from_location: 'A-03-06-2',
+    to_location: 'A-03-06-1',
+    lpn: 'LPN98259272',
+    qty: 144,
+    reason: 'Pick face empty',
+    created_by: 'agent',
+    created_at: '2026-06-01T12:48:00',
+    approved_by: 'Pat',
+    decided_at: '2026-06-01T12:49:00',
+  },
+]
+
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
   if (url === '/api/models') return json(models)
   if (url === '/api/floor-map') return json(floorMap)
+  if (url.startsWith('/api/tasks')) return json(activeTasks)
   return json(chatReply)
 })
 
@@ -125,5 +144,67 @@ describe('App two-column layout', () => {
     expect(await screen.findByRole('button', { name: /^A-03-04-1/, pressed: true })).toBeInTheDocument()
     // The map reloads after the turn.
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/floor-map').length).toBeGreaterThan(1)
+  })
+})
+
+describe('App tasks page', () => {
+  it('shows the number of active tasks on the Tasks tab', async () => {
+    render(<App />)
+    expect(await screen.findByLabelText('1 active')).toBeInTheDocument()
+  })
+
+  it('opens the tasks page and keeps the chat when going back', async () => {
+    render(<App />)
+    await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
+    expect(await screen.findByText('Cheap answer.')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /^Tasks/ }))
+    expect(await screen.findByRole('heading', { name: 'Replenishment tasks' })).toBeInTheDocument()
+    expect(await screen.findByRole('listitem', { name: 'Task #17' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Workspace' }))
+    expect(screen.getByText('Cheap answer.')).toBeInTheDocument()
+  })
+
+  it('shows a task on the map and returns to the workspace', async () => {
+    render(<App />)
+    await userEvent.click(screen.getByRole('button', { name: /^Tasks/ }))
+    const card = await screen.findByRole('listitem', { name: 'Task #17' })
+
+    await userEvent.click(within(card).getByRole('button', { name: 'Show on map' }))
+
+    expect(screen.queryByRole('heading', { name: 'Replenishment tasks' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^A-03-06-1/, pressed: true })).toBeInTheDocument()
+  })
+})
+
+describe('App agent activity', () => {
+  it('has nothing to clear until the agent has done something', () => {
+    render(<App />)
+    expect(screen.queryByRole('button', { name: 'Clear agent activity' })).not.toBeInTheDocument()
+  })
+
+  it('clears the activity feed', async () => {
+    chatReply = {
+      conversation_id: 'conv_1',
+      model: 'claude-opus-5-5',
+      status: 'done',
+      reply: 'Two faces need stock.',
+      pending: [],
+      tool_calls: [
+        { tool: 'list_replenishment_needs', input: {}, ok: true, summary: '13 results', approval: 'n/a' },
+      ],
+    }
+    render(<App />)
+    await userEvent.type(screen.getByLabelText('Message'), 'What needs stock?{Enter}')
+    const activity = await screen.findByRole('list', { name: 'Agent activity' })
+    expect(within(activity).getByText('Checked replenishment needs')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear agent activity' }))
+
+    expect(screen.queryByRole('list', { name: 'Agent activity' })).not.toBeInTheDocument()
+    expect(screen.getByText('Tool calls and approvals will show up here as you chat.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear agent activity' })).not.toBeInTheDocument()
+    expect(screen.getByText('Two faces need stock.')).toBeInTheDocument() // the chat is untouched
   })
 })

@@ -1,3 +1,4 @@
+import { Trash2Icon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ActivityFeed } from '@/components/activity/ActivityFeed'
@@ -5,9 +6,10 @@ import { activityFromTurn, locationsInTurn, type ActivityItem } from '@/componen
 import { Chat } from '@/components/chat/Chat'
 import { FloorMap } from '@/components/floor/FloorMap'
 import { ModelPicker } from '@/components/ModelPicker'
+import { TasksPage } from '@/components/tasks/TasksPage'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getModels, type AgentTurn, type ModelOption } from '@/lib/api'
+import { getModels, getTasks, type AgentTurn, type ModelOption } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const NAME_KEY = 'warehouse-ops.supervisor'
@@ -34,11 +36,13 @@ export default function App() {
   const [supervisor, setSupervisor] = useState(() => load(NAME_KEY) || 'Supervisor')
   const [models, setModels] = useState<ModelOption[]>([])
   const [model, setModel] = useState<string | null>(null)
+  const [page, setPage] = useState<'workspace' | 'tasks'>('workspace')
   const [view, setView] = useState<'chat' | 'map'>('chat') // only used on narrow screens
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [highlight, setHighlight] = useState<string[]>([])
   const [selectedBay, setSelectedBay] = useState<string | null>(null)
   const [mapVersion, setMapVersion] = useState(0)
+  const [activeTasks, setActiveTasks] = useState<number | null>(null)
 
   // useEffect runs after the first render; the empty [] means "only once", like an
   // OnInitializedAsync in Blazor. It loads the model list from the backend.
@@ -53,6 +57,22 @@ export default function App() {
         // Backend not reachable yet: hide the picker and let the backend pick its default.
       })
   }, [])
+
+  // The count on the Tasks tab: loaded at start and again after every agent turn,
+  // since an approval can create a task.
+  useEffect(() => {
+    getTasks('active')
+      .then((tasks) => setActiveTasks(tasks.length))
+      .catch(() => setActiveTasks(null))
+  }, [mapVersion])
+
+  // From a task card: go back to the workspace with that bay selected on the map.
+  function showOnMap(location: string) {
+    setHighlight([location])
+    setSelectedBay(location)
+    setView('map')
+    setPage('workspace')
+  }
 
   function changeModel(id: string) {
     setModel(id)
@@ -78,7 +98,33 @@ export default function App() {
           <h1 className="text-base font-semibold">Warehouse Ops Agent</h1>
           <p className="text-xs text-muted-foreground">Short picks and replenishment</p>
         </div>
-        <nav className="flex gap-1 lg:hidden" aria-label="View">
+        <nav className="flex gap-1" aria-label="Page">
+          <Button
+            size="sm"
+            variant={page === 'workspace' ? 'secondary' : 'ghost'}
+            aria-pressed={page === 'workspace'}
+            onClick={() => setPage('workspace')}
+          >
+            Workspace
+          </Button>
+          <Button
+            size="sm"
+            variant={page === 'tasks' ? 'secondary' : 'ghost'}
+            aria-pressed={page === 'tasks'}
+            onClick={() => setPage('tasks')}
+          >
+            Tasks
+            {activeTasks !== null && activeTasks > 0 && (
+              <span
+                aria-label={`${activeTasks} active`}
+                className="ml-1 rounded-full bg-blue-600 px-1.5 text-[11px] leading-4 text-white"
+              >
+                {activeTasks}
+              </span>
+            )}
+          </Button>
+        </nav>
+        <nav className={cn('flex gap-1 lg:hidden', page !== 'workspace' && 'hidden')} aria-label="View">
           {(['chat', 'map'] as const).map((v) => (
             <Button
               key={v}
@@ -107,13 +153,14 @@ export default function App() {
           </label>
         </div>
       </header>
-      {/* Wide screens: chat on the left, map and activity on the right. Narrow screens
-          show one at a time; both stay mounted so switching loses nothing. */}
-      <main className="flex min-h-0 flex-1">
+      {/* Screens 1400px and wider: three columns (chat, agent activity, floor map). Large screens:
+          chat on the left with the map and activity stacked on the right. Narrow screens show
+          one at a time; both stay mounted so switching loses nothing. */}
+      <main className={cn('flex min-h-0 flex-1', page !== 'workspace' && 'hidden')}>
         <section
           aria-label="Chat"
           className={cn(
-            'min-h-0 flex-col lg:flex lg:w-[440px] lg:shrink-0 lg:border-r xl:w-[480px]',
+            'min-h-0 flex-col lg:flex lg:w-[440px] lg:shrink-0 lg:border-r wide:w-[380px] 2xl:w-[440px]',
             view === 'chat' ? 'flex flex-1 lg:flex-none' : 'hidden',
           )}
         >
@@ -124,13 +171,18 @@ export default function App() {
             onTurn={handleTurn}
           />
         </section>
+        {/* At 1400px and up the aside disappears (display: contents), so its two sections become
+            columns of <main> themselves; its order classes put activity before the map. */}
         <aside
           className={cn(
-            'min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto p-4 lg:flex',
+            'min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto p-4 lg:flex wide:contents',
             view === 'map' ? 'flex' : 'hidden',
           )}
         >
-          <section aria-labelledby="floor-map-heading" className="flex flex-col gap-3">
+          <section
+            aria-labelledby="floor-map-heading"
+            className="flex flex-col gap-3 wide:order-2 wide:min-h-0 wide:min-w-0 wide:flex-1 wide:overflow-y-auto wide:p-4"
+          >
             <h2 id="floor-map-heading" className="text-sm font-semibold">
               Floor map
             </h2>
@@ -141,14 +193,36 @@ export default function App() {
               onSelect={setSelectedBay}
             />
           </section>
-          <section aria-labelledby="activity-heading" className="flex flex-col gap-3">
-            <h2 id="activity-heading" className="text-sm font-semibold">
-              Agent activity
-            </h2>
+          <section
+            aria-labelledby="activity-heading"
+            className="flex flex-col gap-3 wide:order-1 wide:min-h-0 wide:w-72 wide:shrink-0 wide:overflow-y-auto wide:border-r wide:p-4 2xl:w-80"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 id="activity-heading" className="text-sm font-semibold">
+                Agent activity
+              </h2>
+              {activity.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  aria-label="Clear agent activity"
+                  onClick={() => setActivity([])}
+                >
+                  <Trash2Icon />
+                  Clear
+                </Button>
+              )}
+            </div>
             <ActivityFeed items={activity} />
           </section>
         </aside>
       </main>
+      {/* Mounted only while shown, so it loads fresh each time it is opened. */}
+      {page === 'tasks' && (
+        <main className="min-h-0 flex-1 overflow-y-auto p-4">
+          <TasksPage onShowOnMap={showOnMap} />
+        </main>
+      )}
     </div>
   )
 }

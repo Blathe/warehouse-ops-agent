@@ -5,6 +5,7 @@ who calls: the MCP tool, the agent or the API. These functions add or change row
 don't commit; the caller owns the transaction (like a unit of work in EF Core).
 """
 
+from collections.abc import Sequence
 from datetime import datetime
 
 from sqlmodel import Session, col, func, select
@@ -22,6 +23,8 @@ from warehouse_ops.services.errors import NotFoundError, RuleViolationError
 from warehouse_ops.services.inventory import get_sku
 from warehouse_ops.services.replenishment import OPEN_REPLENISHMENT_STATUSES
 from warehouse_ops.services.schemas import ReplenishmentTaskOut
+
+MAX_RESULTS = 200
 
 
 def get_location(session: Session, code: str) -> Location:
@@ -140,6 +143,22 @@ def get_replenishment_task(session: Session, task_id: int) -> ReplenishmentTaskO
     if task is None:
         raise NotFoundError(f"No replenishment task #{task_id}")
     return _to_out(session, task)
+
+
+def list_replenishment_tasks(
+    session: Session,
+    statuses: Sequence[ReplenishmentStatus] | None = None,
+    limit: int = MAX_RESULTS,
+) -> list[ReplenishmentTaskOut]:
+    """Replenishment tasks, newest first. Every status unless ``statuses`` narrows it."""
+    statement = (
+        select(ReplenishmentTask)
+        .order_by(col(ReplenishmentTask.created_at).desc(), col(ReplenishmentTask.id).desc())
+        .limit(limit)
+    )
+    if statuses is not None:
+        statement = statement.where(col(ReplenishmentTask.status).in_(statuses))
+    return [_to_out(session, task) for task in session.exec(statement)]
 
 
 def _to_out(session: Session, task: ReplenishmentTask) -> ReplenishmentTaskOut:

@@ -116,3 +116,48 @@ def test_floor_map(engine: Engine) -> None:
     assert set(body["counts"]) == {"ok", "low", "empty", "unassigned"}
     first = body["bays"][0]
     assert first["pick"]["location"] == "A-01-01-1" and len(first["reserve"]) == 2
+
+
+def test_tasks_default_to_the_active_ones(engine: Engine) -> None:
+    api = make_client(engine, FakeClient())
+
+    tasks = api.get("/api/tasks").json()
+
+    assert tasks and {t["status"] for t in tasks} <= {"PROPOSED", "APPROVED"}
+    assert {"task_id", "sku_code", "description", "from_location", "to_location", "qty"} <= set(
+        tasks[0]
+    )
+
+
+def test_tasks_can_be_filtered_by_status(engine: Engine) -> None:
+    api = make_client(engine, FakeClient())
+
+    done = api.get("/api/tasks", params={"status": "done"}).json()
+    everything = api.get("/api/tasks", params={"status": "all"}).json()
+
+    assert done and {t["status"] for t in done} == {"DONE"}
+    assert len(everything) > len(done)
+
+
+def test_tasks_reject_an_unknown_filter(engine: Engine) -> None:
+    api = make_client(engine, FakeClient())
+    assert api.get("/api/tasks", params={"status": "bogus"}).status_code == 422
+
+
+def test_a_task_approved_in_chat_shows_up_as_active(engine: Engine) -> None:
+    fake = FakeClient(
+        tool_reply(("tu_1", "create_replenishment_task", create_args(engine))),
+        text_reply("Task created."),
+    )
+    api = make_client(engine, fake)
+    before = len(api.get("/api/tasks").json())
+
+    turn = api.post("/api/chat", json={"message": "Refill it"}).json()
+    api.post(
+        f"/api/conversations/{turn['conversation_id']}/approval",
+        json={"approve": True, "decided_by": "Pat"},
+    )
+
+    tasks = api.get("/api/tasks").json()
+    assert len(tasks) == before + 1
+    assert tasks[0]["created_by"] == "agent" and tasks[0]["approved_by"] == "Pat"

@@ -124,3 +124,27 @@ export interface FloorMapData {
 export function getFloorMap(): Promise<FloorMapData> {
   return request('/api/floor-map')
 }
+
+export type TaskStatus = 'PROPOSED' | 'APPROVED' | 'REJECTED' | 'DONE'
+export type TaskFilter = 'active' | 'done' | 'rejected' | 'all'
+
+// Mirrors ReplenishmentTaskOut in backend/src/warehouse_ops/services/schemas.py.
+export interface ReplenishmentTask {
+  task_id: number
+  status: TaskStatus
+  sku_code: string
+  description: string
+  from_location: string
+  to_location: string
+  lpn: string | null
+  qty: number
+  reason: string
+  created_by: string
+  created_at: string // warehouse local time, no UTC offset
+  approved_by: string | null // who approved or rejected it
+  decided_at: string | null
+}
+
+export function getTasks(filter: TaskFilter = 'active'): Promise<ReplenishmentTask[]> {
+  return request(`/api/tasks?status=${filter}`)
+}
