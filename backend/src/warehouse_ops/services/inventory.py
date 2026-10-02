@@ -1,7 +1,15 @@
 from sqlmodel import Session, col, select
 
-from warehouse_ops.db.models import Inventory, Location, LocationType, PickFace, Sku
+from warehouse_ops.db.models import (
+    Inventory,
+    Location,
+    LocationType,
+    PickFace,
+    ReplenishmentTask,
+    Sku,
+)
 from warehouse_ops.services.errors import NotFoundError
+from warehouse_ops.services.replenishment import OPEN_REPLENISHMENT_STATUSES
 from warehouse_ops.services.schemas import Pallet, PickFaceStock, SkuInfo, StockReport
 
 
@@ -41,6 +49,12 @@ def find_stock(session: Session, sku_code: str) -> StockReport:
     )
     pallets = reserve_pallets(session, sku.id)
     reserve_qty = sum(p.qty for p in pallets)
+    open_task = session.exec(
+        select(ReplenishmentTask).where(
+            ReplenishmentTask.to_location_id == face.location_id,
+            col(ReplenishmentTask.status).in_(OPEN_REPLENISHMENT_STATUSES),
+        )
+    ).first()
 
     return StockReport(
         sku=SkuInfo(
@@ -59,4 +73,5 @@ def find_stock(session: Session, sku_code: str) -> StockReport:
         reserve_pallets=pallets,
         reserve_qty=reserve_qty,
         total_qty=on_hand + reserve_qty,
+        open_task_id=open_task.id if open_task else None,
     )

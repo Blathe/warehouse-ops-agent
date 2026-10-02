@@ -107,7 +107,9 @@ TOOLS: dict[str, ToolSpec] = {
             name="find_stock",
             description=(
                 "Show where a SKU is stocked: its pick face (on-hand, min, max) and every "
-                "reserve pallet (location, LPN, qty, received date), oldest pallet first."
+                "reserve pallet (location, LPN, qty, received date), oldest pallet first. "
+                "open_task_id is set when a replenishment task is already open for the pick "
+                "face; don't propose another one."
             ),
             input_model=FindStockInput,
             run=lambda s, a, ctx: inventory.find_stock(s, a.sku_code),
