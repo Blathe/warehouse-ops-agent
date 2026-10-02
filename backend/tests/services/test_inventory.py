@@ -1,7 +1,7 @@
 import pytest
 from sqlmodel import Session, col, select
 
-from warehouse_ops.db.models import Inventory, PickFace, Sku
+from warehouse_ops.db.models import Inventory, PickFace, ReplenishmentStatus, ReplenishmentTask, Sku
 from warehouse_ops.services.errors import NotFoundError
 from warehouse_ops.services.inventory import find_stock
 
@@ -32,3 +32,31 @@ def test_find_stock_trims_whitespace(session: Session) -> None:
 def test_unknown_sku_raises_not_found(session: Session) -> None:
     with pytest.raises(NotFoundError, match="00000"):
         find_stock(session, "00000")
+
+
+def test_find_stock_reports_an_open_replenishment_task(session: Session) -> None:
+    task = session.exec(
+        select(ReplenishmentTask).where(ReplenishmentTask.status == ReplenishmentStatus.APPROVED)
+    ).first()
+    assert task is not None  # the seed plants open tasks
+    sku = session.get(Sku, task.sku_id)
+    assert sku is not None
+
+    assert find_stock(session, sku.sku_code).open_task_id == task.id
+
+
+def test_find_stock_has_no_open_task_when_none_is_open(session: Session) -> None:
+    open_skus = {
+        t.sku_id
+        for t in session.exec(
+            select(ReplenishmentTask).where(
+                col(ReplenishmentTask.status).in_(
+                    [ReplenishmentStatus.PROPOSED, ReplenishmentStatus.APPROVED]
+                )
+            )
+        )
+    }
+    sku = session.exec(select(Sku).where(col(Sku.id).not_in(open_skus))).first()
+    assert sku is not None
+
+    assert find_stock(session, sku.sku_code).open_task_id is None

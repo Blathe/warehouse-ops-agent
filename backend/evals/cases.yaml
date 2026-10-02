@@ -54,7 +54,7 @@ cases:
         args: { sku_code: "{unknown_sku}" }
     forbid_tools: [create_replenishment_task]
     answer_contains_any:
-      - ["not found", "no sku", "doesn't exist", "does not exist", "couldn't find", "could not find", "can't find", "no record", "don't see", "isn't a valid", "unknown"]
+      - ["not found", "no sku", "doesn't exist", "does not exist", "couldn't find", "could not find", "can't find", "no record", "don't see", "isn't a valid", "unknown", "not in the system", "isn't in the system", "not a valid"]
 
   # --- Replenishment needs ---
   - id: needs-all

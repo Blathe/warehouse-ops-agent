@@ -66,6 +66,7 @@ class StockReport(BaseModel):
     reserve_pallets: list[Pallet]  # oldest first (FIFO)
     reserve_qty: int
     total_qty: int
+    open_task_id: int | None = None  # a PROPOSED/APPROVED replenishment task for the pick face
 
 
 class ReplenishmentNeed(BaseModel):
