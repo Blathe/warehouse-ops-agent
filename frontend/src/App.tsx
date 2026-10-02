@@ -203,14 +203,14 @@ export default function App() {
           </label>
         </div>
       </header>
-      {/* Screens 1400px and wider: three columns (chat, agent activity, floor map). Large screens:
-          chat on the left with the map and activity stacked on the right. Narrow screens show
-          one at a time; both stay mounted so switching loses nothing. */}
+      {/* Large screens: chat and the right-hand column share the width 50/50; the right
+          column is the floor map with the agent activity panel under it. Narrow screens show
+          chat or map one at a time; both stay mounted so switching loses nothing. */}
       <main className={cn('flex min-h-0 flex-1', page !== 'workspace' && 'hidden')}>
         <section
           aria-label="Chat"
           className={cn(
-            'min-h-0 flex-col lg:flex lg:w-[440px] lg:shrink-0 lg:border-r wide:w-[380px] 2xl:w-[440px]',
+            'min-h-0 flex-col lg:flex lg:w-1/2 lg:shrink-0 lg:border-r',
             view === 'chat' ? 'flex flex-1 lg:flex-none' : 'hidden',
           )}
         >
@@ -221,17 +221,17 @@ export default function App() {
             onTurn={handleTurn}
           />
         </section>
-        {/* At 1400px and up the aside disappears (display: contents), so its two sections become
-            columns of <main> themselves; its order classes put activity before the map. */}
+        {/* On narrow screens this column scrolls as one page; on large screens the map scrolls
+            on its own and the activity panel keeps a fixed height underneath. */}
         <aside
           className={cn(
-            'min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto p-4 lg:flex wide:contents',
+            'min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex lg:overflow-hidden',
             view === 'map' ? 'flex' : 'hidden',
           )}
         >
           <section
             aria-labelledby="floor-map-heading"
-            className="flex flex-col gap-3 wide:order-2 wide:min-h-0 wide:min-w-0 wide:flex-1 wide:overflow-y-auto wide:p-4"
+            className="flex flex-col gap-3 p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
           >
             <h2 id="floor-map-heading" className="text-sm font-semibold">
               Floor map
@@ -245,7 +245,7 @@ export default function App() {
           </section>
           <section
             aria-labelledby="activity-heading"
-            className="flex flex-col gap-3 wide:order-1 wide:min-h-0 wide:w-72 wide:shrink-0 wide:overflow-y-auto wide:border-r wide:p-4 2xl:w-80"
+            className="flex flex-col gap-3 border-t p-4 lg:h-64 lg:shrink-0 lg:overflow-y-auto"
           >
             <div className="flex items-center justify-between gap-2">
               <h2 id="activity-heading" className="text-sm font-semibold">
