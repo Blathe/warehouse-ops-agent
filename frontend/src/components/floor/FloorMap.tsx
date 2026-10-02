@@ -83,7 +83,10 @@ export function FloorMap({ refreshKey = 0, highlight = [], selected, onSelect }:
       </div>
 
       <div className="overflow-x-auto pb-2">
-        <div className="flex w-max flex-col gap-0.5">
+        {/* The cells share the available width (a grid with one equal column per bay) down to
+            11px each; narrower than that the map scrolls sideways so the cells stay tappable.
+            max-w-4xl stops them growing huge on wide screens. */}
+        <div className="flex w-full max-w-4xl flex-col gap-0.5">
           {rows.map((row, index) => (
             <div key={`${row.zone}-${row.aisle}`}>
               {(index === 0 || rows[index - 1].zone !== row.zone) && (
@@ -91,23 +94,28 @@ export function FloorMap({ refreshKey = 0, highlight = [], selected, onSelect }:
                   {ZONE_NAMES[row.zone] ?? `Zone ${row.zone}`}
                 </h3>
               )}
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-1">
                 <span className="w-12 shrink-0 text-[11px] text-muted-foreground">
                   Aisle {row.aisle}
                 </span>
-                {row.bays.map((bay) => (
-                  <BayCell
-                    key={bay.pick.location}
-                    bay={bay}
-                    selected={bay.pick.location === current}
-                    highlighted={highlighted.has(bay.pick.location)}
-                    onSelect={() => select(bay.pick.location)}
-                  />
-                ))}
+                <div
+                  className="grid flex-1 gap-0.5"
+                  style={{ gridTemplateColumns: `repeat(${row.bays.length}, minmax(11px, 1fr))` }}
+                >
+                  {row.bays.map((bay) => (
+                    <BayCell
+                      key={bay.pick.location}
+                      bay={bay}
+                      selected={bay.pick.location === current}
+                      highlighted={highlighted.has(bay.pick.location)}
+                      onSelect={() => select(bay.pick.location)}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           ))}
-          <p className="mt-1 pl-12 text-[11px] text-muted-foreground">
+          <p className="mt-1 pl-13 text-[11px] text-muted-foreground">
             Bay 1 (dock end, fastest movers) on the left to bay {rows[0]?.bays.length} on the right
           </p>
         </div>
@@ -150,7 +158,7 @@ function BayCell({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        'size-3.5 shrink-0 rounded-sm transition-transform hover:scale-125 focus-visible:outline-2 focus-visible:outline-ring',
+        'aspect-square w-full rounded-sm transition-transform hover:scale-125 focus-visible:outline-2 focus-visible:outline-ring',
         STATUS_STYLES[pick.status].cell,
         pick.open_task_id && 'ring-2 ring-blue-500 ring-inset',
         highlighted && 'animate-pulse outline-2 outline-offset-1 outline-violet-500',
