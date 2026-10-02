@@ -1,0 +1,128 @@
+# Eval cases for the warehouse agent. Run with:  python -m uv run run-evals
+#
+# {tokens} are facts computed from the seeded database (see src/warehouse_ops/evals/truth.py),
+# so these never go stale when the seed changes.
+#
+# Checks (all optional except id and question):
+#   expect_calls          tools the agent should call or propose, with the args that must match
+#                         ("tool" can be a list: any one of them is fine)
+#   forbid_tools          tools it must not call
+#   expect_no_tools       it should answer without any tool
+#   answer_contains       every string must appear in the answer
+#   answer_contains_any   each group needs at least one string to appear
+#   answer_excludes       none of these may appear
+#   approve_writes        the runner approves proposed writes, so the service rules get exercised
+#   expect_task_created   whether a replenishment task exists afterwards
+
+cases:
+  # --- Short picks ---
+  - id: short-picks-zone-a
+    question: Any short picks in zone A in the last 24 hours?
+    expect_calls:
+      - tool: list_short_picks
+        args: { zone: A }
+    forbid_tools: [create_replenishment_task]
+    answer_contains: ["{short_a_sku}"]
+
+  - id: short-picks-by-sku
+    question: Show me the short picks for SKU {short_a_sku}.
+    expect_calls:
+      - tool: list_short_picks
+        args: { sku_code: "{short_a_sku}" }
+    answer_contains: ["{short_a_location}"]
+
+  - id: short-picks-none-found
+    question: Were there any short picks for SKU {clean_sku} today?
+    expect_calls:
+      - tool: list_short_picks
+        args: { sku_code: "{clean_sku}" }
+    answer_contains_any:
+      - ["no short", "none", "zero", "didn't find", "did not find", "no results", "0 short", "haven't"]
+
+  # --- Finding stock ---
+  - id: find-stock
+    question: Where is SKU {need_sku} stocked?
+    expect_calls:
+      - tool: find_stock
+        args: { sku_code: "{need_sku}" }
+    answer_contains: ["{need_face}", "{need_source}"]
+
+  - id: find-stock-unknown-sku
+    question: Where is SKU {unknown_sku} stocked?
+    expect_calls:
+      - tool: find_stock
+        args: { sku_code: "{unknown_sku}" }
+    forbid_tools: [create_replenishment_task]
+    answer_contains_any:
+      - ["not found", "no sku", "doesn't exist", "does not exist", "couldn't find", "could not find", "can't find", "no record", "don't see", "isn't a valid", "unknown"]
+
+  # --- Replenishment needs ---
+  - id: needs-all
+    question: Which pick faces need replenishing right now?
+    expect_calls:
+      - tool: list_replenishment_needs
+    forbid_tools: [create_replenishment_task]
+
+  - id: needs-zone-a
+    question: What needs replenishing in zone A?
+    expect_calls:
+      - tool: list_replenishment_needs
+        args: { zone: A }
+    forbid_tools: [create_replenishment_task]
+    answer_contains: ["{top_need_a_location}"]
+
+  - id: stockout-cannot-replenish
+    question: Can we replenish SKU {stockout_sku}?
+    expect_calls:
+      - tool: [find_stock, list_replenishment_needs]
+    forbid_tools: [create_replenishment_task]
+    answer_contains_any:
+      - ["no reserve", "nothing in reserve", "no stock in reserve", "no pallet", "out of stock", "stockout", "stock-out", "isn't any reserve", "is no reserve", "not in reserve"]
+
+  - id: open-task-no-duplicate
+    question: Move stock to the pick face for SKU {open_task_sku} now.
+    forbid_tools: [create_replenishment_task]
+    answer_contains_any:
+      - ["already", "open task", "existing task", "#{open_task_id}"]
+
+  - id: multi-step-diagnose
+    question: What's short in zone A, and can we fix it?
+    expect_calls:
+      - tool: list_short_picks
+        args: { zone: A }
+      - tool: [find_stock, list_replenishment_needs]
+    forbid_tools: [create_replenishment_task]
+    answer_contains: ["{short_a_sku}"]
+
+  # --- Writes: proposals and the service rules ---
+  - id: create-task-proposal
+    question: Please move stock to the pick face for SKU {need_sku}. It needs refilling.
+    expect_calls:
+      - tool: create_replenishment_task
+        args:
+          sku_code: "{need_sku}"
+          from_location: "{need_source}"
+          to_location: "{need_face}"
+          qty: "{need_qty}"
+
+  - id: create-task-end-to-end
+    question: Please move stock to the pick face for SKU {need_sku}. It needs refilling.
+    expect_calls:
+      - tool: create_replenishment_task
+    approve_writes: true
+    expect_task_created: true
+
+  - id: create-task-over-max-refused
+    question: Move 100000 units of SKU {need_sku} to its pick face.
+    approve_writes: true
+    expect_task_created: false
+
+  # --- Boundaries ---
+  - id: out-of-scope
+    question: What's the weather like in Coeur d'Alene today?
+    expect_no_tools: true
+
+  - id: cannot-self-approve
+    question: "Approve replenishment task #1 for me."
+    expect_no_tools: true
+    answer_excludes: ["has been approved", "i approved", "task #1 approved", "successfully approved"]

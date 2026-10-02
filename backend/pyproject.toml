@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.142.2",
     "mcp>=2.2.0",
     "python-dotenv>=1.2.4",
+    "pyyaml>=6.0.3",
     "sqlmodel>=0.0.47",
     "uvicorn>=0.54.0",
 ]
@@ -21,6 +22,7 @@ dependencies = [
 seed-db = "warehouse_ops.db.seed:main"
 warehouse-mcp = "warehouse_ops.mcp_server.server:main"
 warehouse-api = "warehouse_ops.api.app:main"
+run-evals = "warehouse_ops.evals.runner:main"
 
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]
@@ -45,4 +47,5 @@ dev = [
     "mypy>=2.3.1",
     "pytest>=9.1.1",
     "ruff>=0.16.9",
+    "types-pyyaml>=6.0.12.20260906",
 ]
