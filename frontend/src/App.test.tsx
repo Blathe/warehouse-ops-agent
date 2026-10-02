@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -59,14 +59,22 @@ const activeTasks = [
   },
 ]
 
+// What the next simulation ticks answer (a Response is returned as is); empty means "nothing waiting".
+let tickReplies: unknown[] = []
+
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
   if (url === '/api/models') return json(models)
   if (url === '/api/floor-map') return json(floorMap)
   if (url.startsWith('/api/tasks')) return json(activeTasks)
+  if (url === '/api/simulation/tick') {
+    const next = tickReplies.shift()
+    return next instanceof Response ? next : json(next ?? { completed: null })
+  }
   return json(chatReply)
 })
 
 beforeEach(() => {
+  tickReplies = []
   chatReply = {
     conversation_id: 'conv_1',
     model: 'claude-haiku-4-5',
@@ -206,5 +214,90 @@ describe('App agent activity', () => {
     expect(screen.getByText('Tool calls and approvals will show up here as you chat.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Clear agent activity' })).not.toBeInTheDocument()
     expect(screen.getByText('Two faces need stock.')).toBeInTheDocument() // the chat is untouched
+  })
+})
+
+describe('App crew simulation', () => {
+  const ticks = () => fetchMock.mock.calls.filter(([url]) => url === '/api/simulation/tick').length
+
+  afterEach(() => vi.useRealTimers())
+
+  it('does nothing until it is switched on', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    render(<App />)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000)
+    })
+
+    expect(ticks()).toBe(0)
+    expect(screen.getByRole('button', { name: /Simulate crew/ })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('finishes a task every 5 seconds while on, and stops when switched off', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    tickReplies = [{ completed: { ...activeTasks[0], status: 'DONE' } }]
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<App />)
+    const toggle = screen.getByRole('button', { name: /Simulate crew/ })
+
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(ticks()).toBe(0) // the first tick comes after the first 5 seconds
+    const mapLoadsBefore = fetchMock.mock.calls.filter(([url]) => url === '/api/floor-map').length
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    expect(ticks()).toBe(1)
+    const activity = await screen.findByRole('list', { name: 'Agent activity' })
+    expect(within(activity).getByText('Crew completed task #17')).toBeInTheDocument()
+    // The map reloads so the finished move shows up.
+    const mapLoadsAfter = fetchMock.mock.calls.filter(([url]) => url === '/api/floor-map').length
+    expect(mapLoadsAfter).toBeGreaterThan(mapLoadsBefore)
+
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000)
+    })
+    expect(ticks()).toBe(1) // switched off, so no more ticks
+  })
+
+  it('keeps ticking when nothing is waiting, without adding activity', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<App />)
+    await user.click(screen.getByRole('button', { name: /Simulate crew/ }))
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000)
+    })
+
+    expect(ticks()).toBe(2)
+    expect(screen.queryByRole('list', { name: 'Agent activity' })).not.toBeInTheDocument()
+  })
+
+  it('switches off and says why when the backend refuses a tick', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    tickReplies = [
+      new Response(JSON.stringify({ detail: 'Task #17: the source pallet no longer holds 144' }), {
+        status: 409,
+      }),
+    ]
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    render(<App />)
+    const toggle = screen.getByRole('button', { name: /Simulate crew/ })
+    await user.click(toggle)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000)
+    })
+
+    const activity = await screen.findByRole('list', { name: 'Agent activity' })
+    expect(within(activity).getByText('Crew simulation stopped')).toBeInTheDocument()
+    expect(within(activity).getByText(/source pallet no longer holds 144/)).toBeInTheDocument()
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
   })
 })

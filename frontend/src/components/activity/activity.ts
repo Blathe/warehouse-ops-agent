@@ -1,4 +1,4 @@
-import type { AgentTurn, PendingAction, ToolTrace } from '@/lib/api'
+import type { AgentTurn, PendingAction, ReplenishmentTask, ToolTrace } from '@/lib/api'
 
 export type Tone = 'info' | 'success' | 'warning' | 'error'
 
@@ -59,6 +59,20 @@ export function activityFromTurn(turn: AgentTurn, at = new Date()): ActivityItem
     ...turn.tool_calls.map(describeToolCall),
     ...turn.pending.map(describePending),
   ].map((item) => ({ ...item, id: nextId++, at }))
+}
+
+// A line that didn't come from an agent turn, e.g. from the crew simulation.
+export function activityNote(title: string, detail: string, tone: Tone, at = new Date()): ActivityItem {
+  return { id: nextId++, at, title, detail, tone }
+}
+
+// The simulated floor crew finished a task.
+export function activityFromCompletion(task: ReplenishmentTask): ActivityItem {
+  return activityNote(
+    `Crew completed task #${task.task_id}`,
+    `${task.qty} × SKU ${task.sku_code} from ${task.from_location} to ${task.to_location}`,
+    'success',
+  )
 }
 
 // Pick face codes the turn touches, so the map can highlight them. A reserve slot

@@ -1,19 +1,26 @@
-import { Trash2Icon } from 'lucide-react'
+import { PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ActivityFeed } from '@/components/activity/ActivityFeed'
-import { activityFromTurn, locationsInTurn, type ActivityItem } from '@/components/activity/activity'
+import {
+  activityFromCompletion,
+  activityFromTurn,
+  activityNote,
+  locationsInTurn,
+  type ActivityItem,
+} from '@/components/activity/activity'
 import { Chat } from '@/components/chat/Chat'
 import { FloorMap } from '@/components/floor/FloorMap'
 import { ModelPicker } from '@/components/ModelPicker'
 import { TasksPage } from '@/components/tasks/TasksPage'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getModels, getTasks, type AgentTurn, type ModelOption } from '@/lib/api'
+import { getModels, getTasks, tickSimulation, type AgentTurn, type ModelOption } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const NAME_KEY = 'warehouse-ops.supervisor'
 const MODEL_KEY = 'warehouse-ops.model'
+const CREW_TICK_MS = 5000 // how often the simulated crew finishes a task
 
 // Browser storage can be unavailable (private mode, blocked site data), so never let it throw.
 function load(key: string): string | null {
@@ -43,6 +50,7 @@ export default function App() {
   const [selectedBay, setSelectedBay] = useState<string | null>(null)
   const [mapVersion, setMapVersion] = useState(0)
   const [activeTasks, setActiveTasks] = useState<number | null>(null)
+  const [simulating, setSimulating] = useState(false)
 
   // useEffect runs after the first render; the empty [] means "only once", like an
   // OnInitializedAsync in Blazor. It loads the model list from the backend.
@@ -65,6 +73,35 @@ export default function App() {
       .then((tasks) => setActiveTasks(tasks.length))
       .catch(() => setActiveTasks(null))
   }, [mapVersion])
+
+  // Simulated floor crew: while it is on, ask the backend to finish the oldest approved task
+  // every few seconds. The map, task count and Tasks page reload when one is finished.
+  // The cleanup function stops the timer when the toggle turns off (or the page closes).
+  useEffect(() => {
+    if (!simulating) return
+    let inFlight = false // never send a tick while the previous one is still running
+    const timer = setInterval(() => {
+      if (inFlight) return
+      inFlight = true
+      tickSimulation()
+        .then(({ completed }) => {
+          if (!completed) return
+          setActivity((current) => [...current, activityFromCompletion(completed)])
+          setMapVersion((version) => version + 1)
+        })
+        .catch((error: Error) => {
+          setSimulating(false)
+          setActivity((current) => [
+            ...current,
+            activityNote('Crew simulation stopped', error.message, 'error'),
+          ])
+        })
+        .finally(() => {
+          inFlight = false
+        })
+    }, CREW_TICK_MS)
+    return () => clearInterval(timer)
+  }, [simulating])
 
   // From a task card: go back to the workspace with that bay selected on the map.
   function showOnMap(location: string) {
@@ -138,6 +175,19 @@ export default function App() {
           ))}
         </nav>
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <Button
+            size="sm"
+            variant={simulating ? 'secondary' : 'outline'}
+            aria-pressed={simulating}
+            title="Simulate the warehouse crew finishing one approved task every 5 seconds"
+            onClick={() => setSimulating((on) => !on)}
+          >
+            {simulating ? <PauseIcon /> : <PlayIcon />}
+            Simulate crew
+            {simulating && (
+              <span aria-hidden className="ml-1 size-2 animate-pulse rounded-full bg-emerald-500" />
+            )}
+          </Button>
           {model && models.length > 0 && (
             <ModelPicker models={models} value={model} onChange={changeModel} />
           )}
@@ -220,7 +270,7 @@ export default function App() {
       {/* Mounted only while shown, so it loads fresh each time it is opened. */}
       {page === 'tasks' && (
         <main className="min-h-0 flex-1 overflow-y-auto p-4">
-          <TasksPage onShowOnMap={showOnMap} />
+          <TasksPage onShowOnMap={showOnMap} refreshKey={mapVersion} />
         </main>
       )}
     </div>

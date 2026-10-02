@@ -104,6 +104,19 @@ and a question with no data.
 - Chat (shadcn MessageScroller) with tool-call traces and approval cards.
 - Floor map: grid of locations by x/y, coloured by status (OK / below min / empty / has open task); click for details.
 - Task list: replenishment tasks and their status.
+- Crew simulation: a header toggle (off by default). While on, the front end calls
+  `POST /api/simulation/tick` every 5 seconds; each tick finishes the oldest APPROVED task
+  (ordered by approval time, then id), so the map and task list change as the "crew" works.
+
+## Crew simulation
+
+Finishing a task is a floor event, not something the agent decides, so it is not a tool.
+`complete_next_replenishment_task` (in `services/`) takes the oldest APPROVED task and moves
+the stock for real: the pick face gains `qty`, the source pallet loses it (an emptied pallet's
+slot is freed), and the task becomes DONE. It never touches PROPOSED tasks, so a person always
+approves first. If the source pallet no longer holds the quantity it raises a rule violation
+(the endpoint answers 409 and the front end switches the simulation off). The endpoint is
+serialized with a lock so two overlapping ticks can't finish the same task twice.
 
 ## Build order
 

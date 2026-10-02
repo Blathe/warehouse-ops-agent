@@ -16,10 +16,11 @@ const EMPTY_TEXT: Record<TaskFilter, string> = {
 
 interface TasksPageProps {
   onShowOnMap: (location: string) => void // pick face code to show on the floor map
+  refreshKey?: number // change it to reload, e.g. when the simulated crew finishes a task
 }
 
 // Every replenishment task in one place: what is being moved, where, why and who approved it.
-export function TasksPage({ onShowOnMap }: TasksPageProps) {
+export function TasksPage({ onShowOnMap, refreshKey = 0 }: TasksPageProps) {
   const [filter, setFilter] = useState<TaskFilter>('active')
   const [tasks, setTasks] = useState<ReplenishmentTask[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -33,8 +34,8 @@ export function TasksPage({ onShowOnMap }: TasksPageProps) {
       .catch((e: Error) => setError(e.message))
   }, [filter])
 
-  // Runs when the page opens and whenever the filter changes; Refresh calls load too.
-  useEffect(load, [load])
+  // Runs when the page opens and whenever the filter or refreshKey changes; Refresh calls load too.
+  useEffect(load, [load, refreshKey])
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">

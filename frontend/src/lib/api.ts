@@ -148,3 +148,12 @@ export interface ReplenishmentTask {
 export function getTasks(filter: TaskFilter = 'active'): Promise<ReplenishmentTask[]> {
   return request(`/api/tasks?status=${filter}`)
 }
+
+export interface TickResponse {
+  completed: ReplenishmentTask | null // null when no approved task was waiting
+}
+
+// Simulated floor crew: the backend finishes the oldest approved task and moves its stock.
+export function tickSimulation(): Promise<TickResponse> {
+  return post('/api/simulation/tick', {})
+}
