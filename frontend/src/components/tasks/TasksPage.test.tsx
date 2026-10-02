@@ -119,6 +119,16 @@ describe('TasksPage', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  it('reloads when the refreshKey changes', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    const { rerender } = render(<TasksPage onShowOnMap={() => {}} refreshKey={0} />)
+    await screen.findByRole('listitem', { name: 'Task #17' })
+
+    rerender(<TasksPage onShowOnMap={() => {}} refreshKey={1} />)
+
+    await vi.waitFor(() => expect(requested()).toHaveLength(2))
+  })
+
   it('reports a load failure', async () => {
     vi.stubGlobal(
       'fetch',

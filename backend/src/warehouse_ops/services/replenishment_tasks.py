@@ -138,6 +138,58 @@ def decide_replenishment_task(
     return _to_out(session, task)
 
 
+def complete_next_replenishment_task(session: Session) -> ReplenishmentTaskOut | None:
+    """Simulate the floor crew finishing the oldest approved task, moving the stock for real.
+
+    The pick face gains ``qty`` and the source pallet loses it (an emptied pallet slot is
+    freed). Returns the finished task, or None when nothing is approved. Only APPROVED
+    tasks are touched, so a person always decides first. This is not an agent or MCP tool:
+    a model can't complete tasks, only the API's simulation endpoint calls it.
+    """
+    task = session.exec(
+        select(ReplenishmentTask)
+        .where(ReplenishmentTask.status == ReplenishmentStatus.APPROVED)
+        .order_by(col(ReplenishmentTask.decided_at), col(ReplenishmentTask.id))
+        .limit(1)
+    ).first()
+    if task is None:
+        return None
+
+    pallet = session.exec(
+        select(Inventory).where(
+            Inventory.location_id == task.from_location_id, Inventory.sku_id == task.sku_id
+        )
+    ).first()
+    if pallet is None or pallet.qty < task.qty:
+        raise RuleViolationError(f"Task #{task.id}: the source pallet no longer holds {task.qty}")
+
+    face = session.exec(
+        select(Inventory).where(
+            Inventory.location_id == task.to_location_id, Inventory.sku_id == task.sku_id
+        )
+    ).first()
+    if face is None:
+        face = Inventory(
+            location_id=task.to_location_id,
+            sku_id=task.sku_id,
+            qty=0,
+            received_at=pallet.received_at,
+        )
+    face.qty += task.qty
+    session.add(face)
+
+    pallet.qty -= task.qty
+    if pallet.qty == 0:
+        session.delete(pallet)
+    else:
+        session.add(pallet)
+
+    task.status = ReplenishmentStatus.DONE
+    session.add(task)
+    session.flush()
+    return _to_out(session, task)
+
+
 def get_replenishment_task(session: Session, task_id: int) -> ReplenishmentTaskOut:
     task = session.get(ReplenishmentTask, task_id)
     if task is None:

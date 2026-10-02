@@ -78,6 +78,9 @@ npm test && npm run lint && npm run typecheck
   (`create_replenishment_task`) must go through human approval and validate inputs in `services/`.
 - **Approval is human-only**: approving/rejecting a task (`decide_replenishment_task`) is never exposed
   as an MCP or agent tool, so a model can't approve its own proposal.
+- **Finishing a task is simulator-only**: moving an APPROVED task to DONE (and the stock with it) happens
+  only through `POST /api/simulation/tick` (`complete_next_replenishment_task`), never as an MCP or agent
+  tool. `tests/agent/test_tools.py` fails if a tool that decides or completes tasks is added.
 - **Log every tool call** (tool, args, result summary, duration, approval decision) to the `tool_call_log` table.
 - **Seeded fake data is deterministic** (fixed random seed) so tests and evals are reproducible.
 - **Secrets** come from `.env` (see `.env.example`); never commit keys.

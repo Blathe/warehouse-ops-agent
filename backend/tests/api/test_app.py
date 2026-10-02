@@ -161,3 +161,63 @@ def test_a_task_approved_in_chat_shows_up_as_active(engine: Engine) -> None:
     tasks = api.get("/api/tasks").json()
     assert len(tasks) == before + 1
     assert tasks[0]["created_by"] == "agent" and tasks[0]["approved_by"] == "Pat"
+
+
+def drain(api: TestClient) -> None:
+    while api.post("/api/simulation/tick").json()["completed"] is not None:
+        pass
+
+
+def test_tick_completes_the_oldest_approved_task(engine: Engine) -> None:
+    api = make_client(engine, FakeClient())
+    waiting = api.get("/api/tasks").json()
+    expected = min(
+        (t for t in waiting if t["status"] == "APPROVED"),
+        key=lambda t: (t["decided_at"], t["task_id"]),
+    )
+
+    done = api.post("/api/simulation/tick").json()["completed"]
+
+    assert done["task_id"] == expected["task_id"] and done["status"] == "DONE"
+    assert len(api.get("/api/tasks").json()) == len(waiting) - 1
+    assert expected["task_id"] in [t["task_id"] for t in api.get("/api/tasks?status=done").json()]
+
+
+def test_tick_moves_stock_on_the_floor_map(engine: Engine) -> None:
+    api = make_client(engine, FakeClient())
+
+    def on_hand(location: str) -> int:
+        bays = api.get("/api/floor-map").json()["bays"]
+        return int(next(b["pick"]["on_hand"] for b in bays if b["pick"]["location"] == location))
+
+    before = {t["task_id"]: on_hand(t["to_location"]) for t in api.get("/api/tasks").json()}
+    done = api.post("/api/simulation/tick").json()["completed"]
+
+    assert on_hand(done["to_location"]) == before[done["task_id"]] + done["qty"]
+
+
+def test_tick_with_nothing_approved_returns_null(engine: Engine) -> None:
+    api = make_client(engine, FakeClient())
+    drain(api)
+
+    assert api.post("/api/simulation/tick").json() == {"completed": None}
+    assert api.get("/api/tasks").json() == []
+
+
+def test_a_task_approved_in_chat_is_finished_by_a_tick(engine: Engine) -> None:
+    fake = FakeClient(
+        tool_reply(("tu_1", "create_replenishment_task", create_args(engine))),
+        text_reply("Task created."),
+    )
+    api = make_client(engine, fake)
+    drain(api)  # clear the seeded tasks so the next tick is for ours
+
+    turn = api.post("/api/chat", json={"message": "Refill it"}).json()
+    api.post(
+        f"/api/conversations/{turn['conversation_id']}/approval",
+        json={"approve": True, "decided_by": "Pat"},
+    )
+    done = api.post("/api/simulation/tick").json()["completed"]
+
+    assert done["created_by"] == "agent" and done["approved_by"] == "Pat"
+    assert done["status"] == "DONE"
