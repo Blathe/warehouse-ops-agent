@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine
+from sqlmodel import Session
 
 from warehouse_ops import clock
 from warehouse_ops.agent.loop import Agent, AgentStateError, AgentTurn, Conversation
@@ -24,6 +25,7 @@ from warehouse_ops.agent.models import DEFAULT_MODEL, MODEL_OPTIONS, ModelOption
 from warehouse_ops.db.engine import BACKEND_DIR, get_engine, readonly_session
 from warehouse_ops.db.models import ReplenishmentStatus
 from warehouse_ops.services import replenishment_tasks
+from warehouse_ops.services.errors import RuleViolationError
 from warehouse_ops.services.floor_map import FloorMap, get_floor_map
 from warehouse_ops.services.replenishment import OPEN_REPLENISHMENT_STATUSES
 from warehouse_ops.services.schemas import ReplenishmentTaskOut
@@ -49,6 +51,10 @@ class ModelsResponse(BaseModel):
     models: list[ModelOption]
 
 
+class TickResponse(BaseModel):
+    completed: ReplenishmentTaskOut | None  # None when no approved task was waiting
+
+
 class ApprovalRequest(BaseModel):
     approve: bool
     decided_by: str = Field(min_length=1, description="Name of the person deciding")
@@ -66,6 +72,7 @@ def create_app(
     agent = Agent(client or anthropic.Anthropic(), engine, now)
     conversations: dict[str, Conversation] = {}
     lock = Lock()  # one request at a time per process: conversations aren't thread-safe
+    simulation_lock = Lock()  # so two overlapping ticks can't finish the same task twice
 
     def get_conversation(conversation_id: str) -> Conversation:
         conversation = conversations.get(conversation_id)
@@ -98,6 +105,21 @@ def create_app(
     def tasks(status: TaskFilter = "active") -> list[ReplenishmentTaskOut]:
         with readonly_session(engine) as session:
             return replenishment_tasks.list_replenishment_tasks(session, TASK_FILTERS[status])
+
+    @app.post("/api/simulation/tick")
+    def simulation_tick() -> TickResponse:
+        """Simulated floor crew: finish the oldest approved task and move its stock.
+
+        The front end calls this every few seconds while "Simulate crew" is on. It is not
+        an agent tool, so the model can never complete a task itself.
+        """
+        with simulation_lock, Session(engine) as session:
+            try:
+                completed = replenishment_tasks.complete_next_replenishment_task(session)
+            except RuleViolationError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            session.commit()
+            return TickResponse(completed=completed)
 
     @app.get("/api/models")
     def models() -> ModelsResponse:

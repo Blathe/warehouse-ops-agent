@@ -9,10 +9,18 @@ import pytest
 from sqlmodel import Session, select
 
 from tests.conftest import AS_OF
-from warehouse_ops.db.models import Location, LocationType, ReplenishmentStatus
+from warehouse_ops.db.models import (
+    Inventory,
+    Location,
+    LocationType,
+    ReplenishmentStatus,
+    ReplenishmentTask,
+)
 from warehouse_ops.services.errors import NotFoundError, RuleViolationError
+from warehouse_ops.services.inventory import find_stock
 from warehouse_ops.services.replenishment import list_replenishment_needs
 from warehouse_ops.services.replenishment_tasks import (
+    complete_next_replenishment_task,
     create_replenishment_task,
     decide_replenishment_task,
     get_replenishment_task,
@@ -221,3 +229,103 @@ def test_list_includes_a_new_proposal(session: Session) -> None:
 
 def test_list_honours_the_limit(session: Session) -> None:
     assert len(list_replenishment_tasks(session, limit=3)) == 3
+
+
+def _drain(session: Session) -> None:
+    """Finish every approved task, so a test starts with none waiting."""
+    while complete_next_replenishment_task(session) is not None:
+        pass
+
+
+def _approved(session: Session, **overrides: Any) -> ReplenishmentTask:
+    """An approved task built directly, so a test can use a quantity the rules would refuse."""
+    need = _actionable_need(session)
+    assert need.source is not None
+    pallet = session.exec(select(Inventory).where(Inventory.lpn == need.source.lpn)).one()
+    face = session.exec(select(Location).where(Location.code == need.location)).one()
+    fields: dict[str, Any] = {
+        "sku_id": pallet.sku_id,
+        "from_location_id": pallet.location_id,
+        "to_location_id": face.id,
+        "lpn": pallet.lpn,
+        "qty": need.suggested_qty,
+        "reason": "test",
+        "status": ReplenishmentStatus.APPROVED,
+        "created_by": "test",
+        "approved_by": "Pat",
+        "created_at": AS_OF,
+        "decided_at": AS_OF,
+    }
+    task = ReplenishmentTask(**(fields | overrides))
+    session.add(task)
+    session.flush()
+    return task
+
+
+def test_completing_a_task_moves_the_stock(session: Session) -> None:
+    _drain(session)
+    need = _actionable_need(session)
+    task = create_replenishment_task(session, **_valid_args(need))
+    decide_replenishment_task(
+        session, task_id=task.task_id, approve=True, decided_by="Pat", now=AS_OF
+    )
+    before = find_stock(session, need.sku_code)
+    assert before.open_task_id == task.task_id
+
+    done = complete_next_replenishment_task(session)
+
+    assert done is not None and done.task_id == task.task_id
+    assert done.status == ReplenishmentStatus.DONE
+    after = find_stock(session, need.sku_code)
+    assert after.pick_face.on_hand == before.pick_face.on_hand + task.qty
+    assert after.reserve_qty == before.reserve_qty - task.qty
+    assert after.total_qty == before.total_qty  # stock moved; none created or lost
+    assert after.open_task_id is None  # the face no longer has an open task
+
+
+def test_completes_the_oldest_approved_task_first(session: Session) -> None:
+    waiting = session.exec(
+        select(ReplenishmentTask).where(ReplenishmentTask.status == ReplenishmentStatus.APPROVED)
+    ).all()
+    assert len(waiting) >= 2  # the seed leaves open tasks
+    expected = [t.id for t in sorted(waiting, key=lambda t: (t.decided_at or AS_OF, t.id or 0))]
+
+    finished = []
+    while (task := complete_next_replenishment_task(session)) is not None:
+        finished.append(task.task_id)
+
+    assert finished == expected
+
+
+def test_nothing_happens_when_no_task_is_approved(session: Session) -> None:
+    _drain(session)
+    assert complete_next_replenishment_task(session) is None
+
+
+def test_a_task_nobody_approved_is_never_completed(session: Session) -> None:
+    _drain(session)
+    proposed = create_replenishment_task(session, **_valid_args(_actionable_need(session)))
+
+    assert complete_next_replenishment_task(session) is None
+    assert get_replenishment_task(session, proposed.task_id).status == ReplenishmentStatus.PROPOSED
+
+
+def test_an_emptied_pallet_frees_its_slot(session: Session) -> None:
+    _drain(session)
+    source = _actionable_need(session).source
+    assert source is not None
+    task = _approved(session, qty=source.qty)  # take the whole pallet
+
+    done = complete_next_replenishment_task(session)
+
+    assert done is not None and done.task_id == task.id
+    assert session.exec(select(Inventory).where(Inventory.lpn == task.lpn)).first() is None
+
+
+def test_a_pallet_that_cannot_cover_the_task_is_an_error(session: Session) -> None:
+    _drain(session)
+    task = _approved(session, qty=10_000_000)
+
+    with pytest.raises(RuleViolationError, match="no longer holds"):
+        complete_next_replenishment_task(session)
+    assert get_replenishment_task(session, task.id or 0).status == ReplenishmentStatus.APPROVED
