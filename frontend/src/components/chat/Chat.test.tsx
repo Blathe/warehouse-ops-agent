@@ -47,6 +47,25 @@ const pendingMove = {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Chat', () => {
+  it('renders the assistant reply as markdown but leaves what you typed alone', async () => {
+    mockFetch({
+      body: turn({
+        reply: ['**2 faces** need stock:', '', '| Face | Qty |', '|---|---|', '| A-03-04-1 | 144 |'].join(
+          '\n',
+        ),
+      }),
+    })
+    render(<Chat supervisor="Pat" model={null} />)
+
+    await userEvent.type(screen.getByLabelText('Message'), 'Show **me** the faces{Enter}')
+
+    expect(await screen.findByRole('table')).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'A-03-04-1' })).toBeInTheDocument()
+    expect(screen.getByText('2 faces').tagName).toBe('STRONG')
+    // The supervisor's own message stays literal text.
+    expect(screen.getByText('Show **me** the faces')).toBeInTheDocument()
+  })
+
   it('sends a message and shows the reply with its tool calls', async () => {
     const fetchMock = mockFetch({
       body: turn({
