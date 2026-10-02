@@ -84,6 +84,28 @@ npm test && npm run lint && npm run typecheck
 
 CI runs lint, format check, type check, and tests on every pull request (backend and front end).
 
+## Evals
+
+Unit tests cover the services; the evals measure the *agent*: does Claude pick the right tool, pass the right arguments, and answer correctly? 15 cases (short picks, stock lookup, replenishment needs, write proposals, and boundary cases such as an unknown SKU, a stockout, a duplicate task, an out-of-scope question, and a request to approve its own task) run against the deterministic seeded database. Expected values are looked up from the database at run time, so the cases don't go stale.
+
+```bash
+cd backend
+uv run python -m warehouse_ops.evals --model claude-haiku-4-5   # calls the Claude API and costs money
+```
+
+Results from one run per model (2026-10-02):
+
+| Model | Passed | Tool selection | Arguments | Answers | Outcome | Cost (15 cases) | Mean latency |
+|---|---|---|---|---|---|---|---|
+| Claude Haiku 4.5 | 15 / 15 | 100% | 100% | 100% | 100% | $0.09 | 3.4 s |
+| Claude Sonnet 5.5 | 15 / 15 | 100% | 100% | 100% | 100% | $0.22 | 4.7 s |
+| Claude Opus 5.5 | 14 / 15 | 93% | 100% | 100% | 100% | $0.52 | 8.4 s |
+
+- **Cost and speed scale with model size; on these cases accuracy doesn't.** Haiku matched Sonnet at about 40% of the cost and was more than twice as fast as Opus.
+- **Opus's one miss is not a safety failure.** Asked to "approve task #1", it correctly refused (no tool can approve) and said there is no such task, but it made a read call first and listed other faces. The case requires no tool calls at all, which is stricter than the rule that matters: the agent never approves or writes on its own.
+- **The evals found a real bug.** On Haiku, an early run proposed a duplicate replenishment task because `find_stock` didn't show that one was already open. The service rules would have refused it, but the proposal was wasted. Adding `open_task_id` to `find_stock` fixed it (tool selection 93% to 100%).
+- **Caveats:** one run per case, so results vary run to run. Answer checks are keyword-based, so a correct answer with unexpected wording can score as a miss; an LLM judge is the planned fix.
+
 ## Project layout
 
 ```
@@ -101,10 +123,12 @@ The full product spec (data model, tools, rules, agent behavior) is in [docs/spe
 
 ## Status and roadmap
 
-Working today: schema and seed data, services, MCP server, agent loop with approval and logging, FastAPI API, chat UI, floor map.
+Working today: schema and seed data, services, MCP server, agent loop with approval and logging, FastAPI API, chat UI, floor map, eval runner.
 
 Next:
-- [ ] Eval set and runner (tool-selection, argument, and answer accuracy, plus cost and latency)
+- [x] Eval set and runner (tool-selection, argument, and answer accuracy, plus cost and latency)
+- [ ] Claude-as-judge scoring and repeat runs, to reduce keyword brittleness and run-to-run noise
+- [ ] More eval cases (30 to 50 planned)
 - [ ] Deployment with Postgres
 - [ ] Write-up on design decisions
 
