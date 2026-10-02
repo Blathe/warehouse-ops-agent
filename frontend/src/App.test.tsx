@@ -177,3 +177,34 @@ describe('App tasks page', () => {
     expect(await screen.findByRole('button', { name: /^A-03-06-1/, pressed: true })).toBeInTheDocument()
   })
 })
+
+describe('App agent activity', () => {
+  it('has nothing to clear until the agent has done something', () => {
+    render(<App />)
+    expect(screen.queryByRole('button', { name: 'Clear agent activity' })).not.toBeInTheDocument()
+  })
+
+  it('clears the activity feed', async () => {
+    chatReply = {
+      conversation_id: 'conv_1',
+      model: 'claude-opus-5-5',
+      status: 'done',
+      reply: 'Two faces need stock.',
+      pending: [],
+      tool_calls: [
+        { tool: 'list_replenishment_needs', input: {}, ok: true, summary: '13 results', approval: 'n/a' },
+      ],
+    }
+    render(<App />)
+    await userEvent.type(screen.getByLabelText('Message'), 'What needs stock?{Enter}')
+    const activity = await screen.findByRole('list', { name: 'Agent activity' })
+    expect(within(activity).getByText('Checked replenishment needs')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Clear agent activity' }))
+
+    expect(screen.queryByRole('list', { name: 'Agent activity' })).not.toBeInTheDocument()
+    expect(screen.getByText('Tool calls and approvals will show up here as you chat.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Clear agent activity' })).not.toBeInTheDocument()
+    expect(screen.getByText('Two faces need stock.')).toBeInTheDocument() // the chat is untouched
+  })
+})

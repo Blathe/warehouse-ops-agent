@@ -1,3 +1,4 @@
+import { Trash2Icon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { ActivityFeed } from '@/components/activity/ActivityFeed'
@@ -152,13 +153,14 @@ export default function App() {
           </label>
         </div>
       </header>
-      {/* Wide screens: chat on the left, map and activity on the right. Narrow screens
-          show one at a time; both stay mounted so switching loses nothing. */}
+      {/* Screens 1400px and wider: three columns (chat, agent activity, floor map). Large screens:
+          chat on the left with the map and activity stacked on the right. Narrow screens show
+          one at a time; both stay mounted so switching loses nothing. */}
       <main className={cn('flex min-h-0 flex-1', page !== 'workspace' && 'hidden')}>
         <section
           aria-label="Chat"
           className={cn(
-            'min-h-0 flex-col lg:flex lg:w-[440px] lg:shrink-0 lg:border-r xl:w-[480px]',
+            'min-h-0 flex-col lg:flex lg:w-[440px] lg:shrink-0 lg:border-r wide:w-[380px] 2xl:w-[440px]',
             view === 'chat' ? 'flex flex-1 lg:flex-none' : 'hidden',
           )}
         >
@@ -169,13 +171,18 @@ export default function App() {
             onTurn={handleTurn}
           />
         </section>
+        {/* At 1400px and up the aside disappears (display: contents), so its two sections become
+            columns of <main> themselves; its order classes put activity before the map. */}
         <aside
           className={cn(
-            'min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto p-4 lg:flex',
+            'min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-y-auto p-4 lg:flex wide:contents',
             view === 'map' ? 'flex' : 'hidden',
           )}
         >
-          <section aria-labelledby="floor-map-heading" className="flex flex-col gap-3">
+          <section
+            aria-labelledby="floor-map-heading"
+            className="flex flex-col gap-3 wide:order-2 wide:min-h-0 wide:min-w-0 wide:flex-1 wide:overflow-y-auto wide:p-4"
+          >
             <h2 id="floor-map-heading" className="text-sm font-semibold">
               Floor map
             </h2>
@@ -186,10 +193,26 @@ export default function App() {
               onSelect={setSelectedBay}
             />
           </section>
-          <section aria-labelledby="activity-heading" className="flex flex-col gap-3">
-            <h2 id="activity-heading" className="text-sm font-semibold">
-              Agent activity
-            </h2>
+          <section
+            aria-labelledby="activity-heading"
+            className="flex flex-col gap-3 wide:order-1 wide:min-h-0 wide:w-72 wide:shrink-0 wide:overflow-y-auto wide:border-r wide:p-4 2xl:w-80"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 id="activity-heading" className="text-sm font-semibold">
+                Agent activity
+              </h2>
+              {activity.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  aria-label="Clear agent activity"
+                  onClick={() => setActivity([])}
+                >
+                  <Trash2Icon />
+                  Clear
+                </Button>
+              )}
+            </div>
             <ActivityFeed items={activity} />
           </section>
         </aside>
