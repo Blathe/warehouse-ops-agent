@@ -20,7 +20,8 @@ from sqlalchemy import Engine
 from warehouse_ops import clock
 from warehouse_ops.agent.loop import Agent, AgentStateError, AgentTurn, Conversation
 from warehouse_ops.agent.models import DEFAULT_MODEL, MODEL_OPTIONS, ModelOption, is_supported
-from warehouse_ops.db.engine import BACKEND_DIR, get_engine
+from warehouse_ops.db.engine import BACKEND_DIR, get_engine, readonly_session
+from warehouse_ops.services.floor_map import FloorMap, get_floor_map
 
 
 class ChatRequest(BaseModel):
@@ -47,7 +48,8 @@ def create_app(
 ) -> FastAPI:
     """Build the app; tests pass an in-memory engine and a fake Claude client."""
     app = FastAPI(title="Warehouse Ops Agent")
-    agent = Agent(client or anthropic.Anthropic(), engine or get_engine(), now)
+    engine = engine or get_engine()
+    agent = Agent(client or anthropic.Anthropic(), engine, now)
     conversations: dict[str, Conversation] = {}
     lock = Lock()  # one request at a time per process: conversations aren't thread-safe
 
@@ -72,6 +74,11 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/floor-map")
+    def floor_map() -> FloorMap:
+        with readonly_session(engine) as session:
+            return get_floor_map(session)
 
     @app.get("/api/models")
     def models() -> ModelsResponse:
