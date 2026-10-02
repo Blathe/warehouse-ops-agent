@@ -29,8 +29,9 @@ backend/
     mcp_server/             # MCP tool wrappers around services/
     agent/                  # Claude agent loop, approval flow, tool-call logging
     api/                    # FastAPI app for the front end
+    evals/                  # eval runner, scoring, and ground-truth facts from the seeded DB
   tests/                    # pytest, mirrors src/ layout
-  evals/                    # eval questions (YAML/JSON) + runner
+  evals/                    # eval questions (cases.yaml); run reports land in evals/results/
 frontend/                   # React app (added in the agent + chat UI phase)
 docs/                       # spec, ADRs, write-up drafts
 ```
@@ -48,6 +49,8 @@ python -m uv run seed-db              # reset + fill backend/warehouse.db (--see
 python -m uv run warehouse-mcp        # MCP server on stdio (see docs/claude-desktop.md)
 python -m uv run warehouse-api        # FastAPI + agent on http://127.0.0.1:8000 (reads ../.env)
 python -m uv run pytest               # tests
+python -m uv run run-evals            # agent evals: calls the Claude API and costs money
+                                      # (--model, --only id1,id2; reports go to evals/results/)
 python -m uv run --no-sync pytest     # skip the re-sync if an old Claude Desktop config still runs
                                       # warehouse-mcp.exe (a locked exe makes the sync fail)
 python -m uv run ruff check . && python -m uv run ruff format .
