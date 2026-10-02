@@ -2,6 +2,7 @@ import { ArrowUpIcon } from 'lucide-react'
 import { useState, type FormEvent, type KeyboardEvent } from 'react'
 
 import { ApprovalCard } from '@/components/chat/ApprovalCard'
+import { Markdown } from '@/components/chat/Markdown'
 import { ToolCalls } from '@/components/chat/ToolCalls'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
@@ -184,8 +185,16 @@ function EntryView({
     <Message align={align}>
       <MessageContent>
         {entry.text && (
-          <Bubble variant={variant}>
-            <BubbleContent className="whitespace-pre-wrap">{entry.text}</BubbleContent>
+          // Replies are markdown (the model writes tables and lists) and get the full width;
+          // what the supervisor typed and error messages stay plain text.
+          <Bubble variant={variant} className={entry.role === 'assistant' ? 'max-w-full' : undefined}>
+            {entry.role === 'assistant' ? (
+              <BubbleContent>
+                <Markdown>{entry.text}</Markdown>
+              </BubbleContent>
+            ) : (
+              <BubbleContent className="whitespace-pre-wrap">{entry.text}</BubbleContent>
+            )}
           </Bubble>
         )}
         {entry.pending.length > 0 && (
