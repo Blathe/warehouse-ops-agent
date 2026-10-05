@@ -113,6 +113,7 @@ export interface Bay {
   y: number
   pick: PickSlot
   reserve: ReserveSlot[]
+  open_discrepancies: string[] // location codes in this bay with an open count
 }
 
 export interface FloorMapData {
@@ -156,4 +157,47 @@ export interface TickResponse {
 // Simulated floor crew: the backend finishes the oldest approved task and moves its stock.
 export function tickSimulation(): Promise<TickResponse> {
   return post('/api/simulation/tick', {})
+}
+
+export type CountStatus = 'MATCHED' | 'DISCREPANCY' | 'RECOUNT_REQUESTED' | 'RECOUNTED' | 'ACCEPTED'
+export type CountFilter = 'open' | 'resolved' | 'all'
+
+export interface CycleCount {
+  id: number
+  location: string
+  sku_code: string
+  description: string
+  case_qty: number
+  lpn: string | null
+  counted_by: string
+  counted_at: string
+  system_qty: number
+  counted_qty: number
+  variance: number // counted - system
+  status: CountStatus
+  resolved_by: string | null
+  resolved_at: string | null
+  resolution_reason: string | null
+}
+
+export interface CycleCountRun {
+  counted: number
+  matched: number
+  discrepancies: CycleCount[]
+}
+
+export function simulateCycleCount(): Promise<CycleCountRun> {
+  return post('/api/simulation/cycle-count', {})
+}
+
+export function getCycleCounts(filter: CountFilter = 'open'): Promise<CycleCount[]> {
+  return request(`/api/cycle-counts?status=${filter}`)
+}
+
+export function acceptCycleCount(id: number, decidedBy: string, reason: string): Promise<CycleCount> {
+  return post(`/api/cycle-counts/${id}/accept`, { decided_by: decidedBy, reason })
+}
+
+export function requestRecount(id: number, decidedBy: string): Promise<CycleCount> {
+  return post(`/api/cycle-counts/${id}/recount`, { decided_by: decidedBy })
 }

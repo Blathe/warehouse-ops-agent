@@ -8,6 +8,7 @@ must run as a single process.
 
 from collections.abc import Callable
 from datetime import datetime
+from random import Random
 from threading import Lock
 from typing import Literal
 
@@ -23,9 +24,10 @@ from warehouse_ops import clock
 from warehouse_ops.agent.loop import Agent, AgentStateError, AgentTurn, Conversation
 from warehouse_ops.agent.models import DEFAULT_MODEL, MODEL_OPTIONS, ModelOption, is_supported
 from warehouse_ops.db.engine import BACKEND_DIR, get_engine, readonly_session
-from warehouse_ops.db.models import ReplenishmentStatus
-from warehouse_ops.services import replenishment_tasks
-from warehouse_ops.services.errors import RuleViolationError
+from warehouse_ops.db.models import CountStatus, ReplenishmentStatus
+from warehouse_ops.services import cycle_counts, replenishment_tasks
+from warehouse_ops.services.cycle_counts import CycleCountOut, CycleCountRun
+from warehouse_ops.services.errors import NotFoundError, RuleViolationError
 from warehouse_ops.services.floor_map import FloorMap, get_floor_map
 from warehouse_ops.services.replenishment import OPEN_REPLENISHMENT_STATUSES
 from warehouse_ops.services.schemas import ReplenishmentTaskOut
@@ -38,6 +40,24 @@ TASK_FILTERS: dict[TaskFilter, tuple[ReplenishmentStatus, ...] | None] = {
     "rejected": (ReplenishmentStatus.REJECTED,),
     "all": None,
 }
+
+
+# "open" = needs a supervisor: a discrepancy, or one waiting for its recount.
+CountFilter = Literal["open", "resolved", "all"]
+COUNT_FILTERS: dict[CountFilter, tuple[CountStatus, ...]] = {
+    "open": cycle_counts.OPEN_STATUSES,
+    "resolved": (CountStatus.ACCEPTED, CountStatus.RECOUNTED),
+    "all": tuple(CountStatus),
+}
+
+
+class AcceptCountRequest(BaseModel):
+    decided_by: str = Field(min_length=1)
+    reason: str = Field(min_length=1, description="Why the system should match the count")
+
+
+class RecountRequest(BaseModel):
+    decided_by: str = Field(min_length=1)
 
 
 class ChatRequest(BaseModel):
@@ -120,6 +140,52 @@ def create_app(
                 raise HTTPException(409, str(exc)) from exc
             session.commit()
             return TickResponse(completed=completed)
+
+    @app.post("/api/simulation/cycle-count")
+    def simulate_cycle_count() -> CycleCountRun:
+        """Simulated clerk: count ~30 locations, including every planted problem."""
+        with simulation_lock, Session(engine) as session:
+            result = cycle_counts.simulate_cycle_count(session, rng=Random(), now=now())
+            session.commit()
+            return result
+
+    @app.get("/api/cycle-counts")
+    def list_counts(status: CountFilter = "open") -> list[CycleCountOut]:
+        """Counts newest first. Matched counts only show under "all"."""
+        with readonly_session(engine) as session:
+            return cycle_counts.list_cycle_counts(session, COUNT_FILTERS[status])
+
+    @app.post("/api/cycle-counts/{count_id}/accept")
+    def accept_count(count_id: int, request: AcceptCountRequest) -> CycleCountOut:
+        """A supervisor accepts the count: the system is adjusted to it (never an agent tool)."""
+        return resolve_count(
+            lambda session: cycle_counts.accept_cycle_count(
+                session,
+                count_id=count_id,
+                decided_by=request.decided_by,
+                reason=request.reason,
+                now=now(),
+            )
+        )
+
+    @app.post("/api/cycle-counts/{count_id}/recount")
+    def recount(count_id: int, request: RecountRequest) -> CycleCountOut:
+        return resolve_count(
+            lambda session: cycle_counts.request_recount(
+                session, count_id=count_id, decided_by=request.decided_by, now=now()
+            )
+        )
+
+    def resolve_count(step: Callable[[Session], CycleCountOut]) -> CycleCountOut:
+        with simulation_lock, Session(engine) as session:
+            try:
+                result = step(session)
+            except NotFoundError as exc:
+                raise HTTPException(404, str(exc)) from exc
+            except RuleViolationError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            session.commit()
+            return result
 
     @app.get("/api/models")
     def models() -> ModelsResponse:

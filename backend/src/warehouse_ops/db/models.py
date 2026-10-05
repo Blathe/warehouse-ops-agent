@@ -80,6 +80,14 @@ class TxnType(StrEnum):
     COUNT_ADJUSTMENT = "COUNT_ADJUSTMENT"  # accepting a cycle count
 
 
+class CountStatus(StrEnum):
+    MATCHED = "MATCHED"  # counted qty equals the system qty
+    DISCREPANCY = "DISCREPANCY"  # open: waiting for a supervisor
+    RECOUNT_REQUESTED = "RECOUNT_REQUESTED"  # the next count includes the location again
+    RECOUNTED = "RECOUNTED"  # superseded by a newer count of the same location
+    ACCEPTED = "ACCEPTED"  # the system was adjusted to the count
+
+
 class Approval(StrEnum):
     NOT_APPLICABLE = "n/a"
     APPROVED = "approved"
@@ -241,3 +249,23 @@ class ShelfVariance(SQLModel, table=True):
     delta: int
     scenario: str
     transient: bool = False
+
+
+class CycleCount(SQLModel, table=True):
+    """One counted location and SKU. A mismatch is a discrepancy until someone resolves it."""
+
+    __tablename__ = "cycle_count"
+
+    id: int | None = Field(default=None, primary_key=True)
+    location_id: int = Field(foreign_key="location.id", index=True)
+    sku_id: int = Field(foreign_key="sku.id")
+    lpn: str | None = None
+    counted_by: str
+    counted_at: NaiveDatetime
+    system_qty: int
+    counted_qty: int
+    variance: int  # counted - system
+    status: CountStatus = Field(index=True)
+    resolved_by: str | None = None
+    resolved_at: NaiveDatetime | None = None
+    resolution_reason: str | None = None

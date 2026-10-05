@@ -221,3 +221,35 @@ def test_a_task_approved_in_chat_is_finished_by_a_tick(engine: Engine) -> None:
 
     assert done["created_by"] == "agent" and done["approved_by"] == "Pat"
     assert done["status"] == "DONE"
+
+
+def test_cycle_count_round_trip(engine: Engine) -> None:
+    api = make_client(engine, FakeClient())
+
+    run = api.post("/api/simulation/cycle-count").json()
+    assert run["counted"] == 30 and len(run["discrepancies"]) == 8
+
+    open_counts = api.get("/api/cycle-counts").json()
+    assert {c["id"] for c in open_counts} == {d["id"] for d in run["discrepancies"]}
+    # Pick-face counts (no LPN), so accepting can't clash with a pallet still recorded elsewhere.
+    first, second = [c["id"] for c in open_counts if c["lpn"] is None][:2]
+
+    missing_reason = api.post(f"/api/cycle-counts/{first}/accept", json={"decided_by": "Pat"})
+    assert missing_reason.status_code == 422
+
+    recount = api.post(f"/api/cycle-counts/{first}/recount", json={"decided_by": "Pat"})
+    assert recount.json()["status"] == "RECOUNT_REQUESTED"
+    assert (
+        api.post(f"/api/cycle-counts/{first}/recount", json={"decided_by": "Pat"}).status_code
+        == 409
+    )
+    assert (
+        api.post("/api/cycle-counts/999999/recount", json={"decided_by": "Pat"}).status_code == 404
+    )
+
+    accepted = api.post(
+        f"/api/cycle-counts/{second}/accept", json={"decided_by": "Pat", "reason": "Checked"}
+    ).json()
+    assert accepted["status"] == "ACCEPTED" and accepted["resolution_reason"] == "Checked"
+    resolved = api.get("/api/cycle-counts", params={"status": "resolved"}).json()
+    assert [c["id"] for c in resolved] == [second]

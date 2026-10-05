@@ -28,6 +28,7 @@ function bay(location: string, overrides: Partial<Bay['pick']> = {}): Bay {
       { location: location.replace(/-1$/, '-2'), level: 2, sku_code: '58368', lpn: 'LPN98259272', qty: 552 },
       { location: location.replace(/-1$/, '-3'), level: 3, sku_code: null, lpn: null, qty: 0 },
     ],
+    open_discrepancies: [],
   }
 }
 
