@@ -20,3 +20,16 @@ for (const name of ['ResizeObserver', 'IntersectionObserver'] as const) {
   }
 }
 Element.prototype.scrollTo ??= function () {}
+
+// jsdom has no matchMedia; the sidebar uses it to tell phones from desktops.
+window.matchMedia ??= (query: string) =>
+  ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener() {},
+    removeEventListener() {},
+    addListener() {},
+    removeListener() {},
+    dispatchEvent: () => false,
+  }) as MediaQueryList
