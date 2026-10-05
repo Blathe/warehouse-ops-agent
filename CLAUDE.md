@@ -52,6 +52,7 @@ python -m uv run pytest               # tests
 python -m uv run run-evals            # agent evals: calls the Claude API and costs money
                                       # (--model, --only id1,id2; reports go to evals/results/)
 python -m uv run run-evals --suite investigator  # cycle count investigator evals (evals/investigations.yaml)
+python -m uv run run-evals --suite investigator --rescore evals/results/<report>.json  # regrade, no API calls
 python -m uv run --no-sync pytest     # skip the re-sync if an old Claude Desktop config still runs
                                       # warehouse-mcp.exe (a locked exe makes the sync fail)
 python -m uv run ruff check . && python -m uv run ruff format .

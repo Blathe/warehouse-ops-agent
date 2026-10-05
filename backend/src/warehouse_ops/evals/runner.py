@@ -242,13 +242,19 @@ def main() -> None:
         help="agent: the chat agent's cases; investigator: the cycle count investigator's",
     )
     parser.add_argument("--cases", type=Path, default=None, help="defaults to the suite's YAML")
+    parser.add_argument(
+        "--rescore",
+        type=Path,
+        default=None,
+        help="investigator suite: grade a saved report again with the current cases (no API calls)",
+    )
     parser.add_argument("--only", default=None, help="comma-separated case ids to run")
     args = parser.parse_args()
 
     if not is_supported(args.model):
         sys.exit(f"Unsupported model {args.model!r}")
     load_dotenv(BACKEND_DIR.parent / ".env")
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if not os.environ.get("ANTHROPIC_API_KEY") and not args.rescore:
         sys.exit("Set ANTHROPIC_API_KEY (in .env or the environment) to run the evals.")
 
     if args.suite == "investigator":
@@ -279,6 +285,13 @@ def _main_investigator(args: argparse.Namespace) -> int:
     from warehouse_ops.evals import investigations as inv
 
     cases = inv.load_investigation_cases(args.cases or inv.DEFAULT_CASES_PATH)
+    if args.rescore:
+        report = json.loads(args.rescore.read_text(encoding="utf-8"))
+        summary, results = inv.rescore_report(report, cases)
+        for result in results:
+            print(inv.format_investigation_result(result))
+        print(inv.format_investigation_summary(summary))
+        return 0 if summary.passed == summary.cases else 1
     if args.only:
         wanted = set(args.only.split(","))
         unknown = wanted - {c.id for c in cases}

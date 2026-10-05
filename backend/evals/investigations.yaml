@@ -31,21 +31,21 @@ cases:
     location: "{mis_slot_missing}"
     expect_tools: [[get_nearby_stock, list_discrepancies]]
     top_cause_any:
-      - [wrong slot, wrong location, misplaced, mis-slot, misslot, mis-slotted, put away, putaway, adjacent, next slot, neighbo, one slot, moved to]
+      - [wrong slot, wrong location, misplaced, mis-slot, misslot, mis-slotted, put away, putaway, adjacent, next slot, neighbo, one slot, moved to, moved from, physically moved, relocated, belongs]
     evidence_contains: ["{mis_slot_found}"]
 
   - id: mis-slot-found-pallet
     location: "{mis_slot_found}"
     expect_tools: [[get_nearby_stock, list_discrepancies]]
     top_cause_any:
-      - [wrong slot, wrong location, misplaced, mis-slot, misslot, mis-slotted, put away, putaway, adjacent, next slot, neighbo, one slot, belongs]
+      - [wrong slot, wrong location, misplaced, mis-slot, misslot, mis-slotted, put away, putaway, adjacent, next slot, neighbo, one slot, moved to, moved from, physically moved, relocated, belongs]
     evidence_contains: ["{mis_slot_missing}"]
 
   - id: case-vs-each
     location: "{case_location}"
     top_cause_any:
       - [case]
-      - [unit, each, piece, individual]
+      - [instead of, rather than, in cases, as cases, case count, not units, not eaches, not single]
     next_steps_any:
       - [recount, count again, re-count]
 
@@ -53,14 +53,14 @@ cases:
     location: "{short_face}"
     expect_tools: [get_inventory_history]
     top_cause_any:
-      - [replen]
+      - [replen, refill, restock]
     evidence_contains: ["{short_pallet}"]
 
   - id: short-replen-pallet
     location: "{short_pallet}"
     expect_tools: [get_inventory_history]
     top_cause_any:
-      - [replen]
+      - [replen, refill, restock]
     evidence_contains: ["{short_face}"]
 
   - id: mid-pick-count
@@ -79,6 +79,8 @@ cases:
     expect_tools: [get_inventory_history]
     top_cause_any:
       - [lost, damage, theft, shrink, missing, removed, unrecorded, without a record, without a system record, no record, unaccounted]
-    top_cause_excludes: [replenish, wrong slot, misplaced, mis-slot, adjacent, case, tote, unconfirmed pick, open pick]
+    # Phrases that assert a mechanism. Single words like "replenishment" are left out, since a
+    # good answer often lists them as things that did NOT happen.
+    top_cause_excludes: [wrong slot, misplaced, mis-slot, put away in, counted in cases, counted cases, in a tote, refill moved, replenishment moved]
     next_steps_any:
       - [recount, count again, re-count, damage, theft, security, camera]

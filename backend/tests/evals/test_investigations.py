@@ -16,6 +16,7 @@ from warehouse_ops.evals.investigations import (
     case_placeholders,
     load_investigation_cases,
     prepare,
+    rescore_report,
     resolve_case,
     run_investigation_case,
     run_investigation_evals,
@@ -197,3 +198,33 @@ def test_excluded_claims_fail_the_top_cause() -> None:
     assert score_investigation(case, ObservedInvestigation([], honest)).passed
     score = score_investigation(case, ObservedInvestigation([], invented))
     assert score.root_cause_ok is False and "claims ['replenish']" in score.failures[0]
+
+
+def test_a_saved_report_can_be_graded_again() -> None:
+    cases = [c for c in load_investigation_cases() if c.id == "blank-adjustment"]
+    report: dict[str, Any] = {
+        "summary": summarize_investigations(MODEL, []).model_dump(),
+        "results": [
+            {
+                "id": "blank-adjustment",
+                "location": "A-02-23-1",
+                "status": "failed",  # graded by an older, stricter version of the case
+                "summary": "A +30 adjustment by Michael Mcguire with no reason.",
+                "causes": [
+                    {
+                        "cause": "Mistaken manual adjustment",
+                        "likelihood": "high",
+                        "evidence": ["+30 by Michael Mcguire"],
+                    }
+                ],
+                "next_steps": ["Ask Michael Mcguire"],
+                "tools": ["get_inventory_history"],
+                "cost_usd": 0.01,
+            }
+        ],
+    }
+
+    summary, results = rescore_report(report, cases)
+
+    assert results[0].status == "passed" and results[0].cost_usd == 0.01
+    assert summary.passed == 1 and summary.root_cause_accuracy == 1.0

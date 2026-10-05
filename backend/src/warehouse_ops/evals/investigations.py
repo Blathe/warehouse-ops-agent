@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from random import Random
+from typing import Any
 
 import yaml
 from anthropic import Anthropic
@@ -23,6 +24,7 @@ from sqlmodel import Session, col, select
 from warehouse_ops.agent.investigator import Investigator
 from warehouse_ops.db.models import (
     InventoryTxn,
+    InvestigationStatus,
     Location,
     PickTask,
     PickTaskStatus,
@@ -34,6 +36,7 @@ from warehouse_ops.db.models import (
 from warehouse_ops.evals.cases import Facts, placeholders, resolve_values
 from warehouse_ops.evals.common import AS_OF, Meter, MeteredClient, cost_usd, seeded_engine
 from warehouse_ops.services.cycle_counts import (
+    Cause,
     InvestigationOut,
     simulate_cycle_count,
 )
@@ -373,6 +376,54 @@ def run_investigation_evals(
         if on_result:
             on_result(result)
     return results
+
+
+def rescore_report(
+    report: dict[str, Any], cases: list[InvestigationCase]
+) -> tuple[InvestigationSummary, list[InvestigationResult]]:
+    """Grade a saved report again with the current cases, without calling the model.
+
+    Useful after tightening or loosening a check: the findings are in the report already.
+    """
+    engine = seeded_engine()
+    with Session(engine) as session:
+        facts = build_investigation_facts(session)
+    by_id = {c.id: resolve_case(c, facts) for c in cases}
+    summary_in = InvestigationSummary.model_validate(report["summary"])
+    results = []
+    for raw in report["results"]:
+        old = InvestigationResult.model_validate(raw)
+        case = by_id.get(old.id)
+        if case is None or old.status == "error":
+            results.append(old)
+            continue
+        findings = InvestigationOut(
+            id=0,
+            status=InvestigationStatus.DONE,
+            model=summary_in.model,
+            summary=old.summary,
+            causes=[Cause.model_validate(c) for c in old.causes],
+            next_steps=old.next_steps,
+            error=None,
+            tool_calls=len(old.tools),
+            started_at=AS_OF,
+            finished_at=AS_OF,
+        )
+        score = score_investigation(case, ObservedInvestigation(old.tools, findings))
+        results.append(
+            old.model_copy(
+                update={
+                    "status": "passed" if score.passed else "failed",
+                    "root_cause_ok": score.root_cause_ok,
+                    "top3_ok": score.top3_ok,
+                    "evidence_ok": score.evidence_ok,
+                    "tools_ok": score.tools_ok,
+                    "steps_ok": score.steps_ok,
+                    "failures": score.failures,
+                }
+            )
+        )
+    return summarize_investigations(summary_in.model, results), results
 
 
 def _rate(checks: list[bool | None]) -> float | None:
