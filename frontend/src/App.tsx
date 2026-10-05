@@ -1,5 +1,6 @@
 import { PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 
 import { ActivityFeed } from '@/components/activity/ActivityFeed'
 import {
@@ -13,10 +14,15 @@ import { Chat } from '@/components/chat/Chat'
 import { CycleCountsPage, type CountEvent } from '@/components/counts/CycleCountsPage'
 import { formatVariance } from '@/components/counts/status'
 import { FloorMap } from '@/components/floor/FloorMap'
+import { AppSidebar } from '@/components/layout/AppSidebar'
+import { PAGES } from '@/components/layout/pages'
 import { ModelPicker } from '@/components/ModelPicker'
 import { TasksPage } from '@/components/tasks/TasksPage'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Separator } from '@/components/ui/separator'
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import {
   getCycleCounts,
   getModels,
@@ -80,7 +86,8 @@ export default function App() {
   const [supervisor, setSupervisor] = useState(() => load(NAME_KEY) || 'Supervisor')
   const [models, setModels] = useState<ModelOption[]>([])
   const [model, setModel] = useState<string | null>(null)
-  const [page, setPage] = useState<'workspace' | 'tasks' | 'counts'>('workspace')
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
   const [view, setView] = useState<'chat' | 'map'>('chat') // only used on narrow screens
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [highlight, setHighlight] = useState<string[]>([])
@@ -149,7 +156,7 @@ export default function App() {
     setHighlight([location])
     setSelectedBay(location)
     setView('map')
-    setPage('workspace')
+    navigate('/workspace')
   }
 
   // From the Cycle counts page: log it and refresh the map, whose bays show open counts.
@@ -177,177 +184,177 @@ export default function App() {
 
   const labels = Object.fromEntries(models.map((m) => [m.id, m.label]))
 
+  const pageTitle = PAGES.find((p) => pathname.startsWith(p.path))?.title ?? 'Warehouse Ops Agent'
+  const onWorkspace = pathname.startsWith('/workspace')
+
   return (
-    <div className="flex h-dvh flex-col bg-background text-foreground">
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b px-4 py-3">
-        <div>
-          <h1 className="text-base font-semibold">Warehouse Ops Agent</h1>
-          <p className="text-xs text-muted-foreground">Short picks and replenishment</p>
-        </div>
-        <nav className="flex gap-1" aria-label="Page">
-          <Button
-            size="sm"
-            variant={page === 'workspace' ? 'secondary' : 'ghost'}
-            aria-pressed={page === 'workspace'}
-            onClick={() => setPage('workspace')}
-          >
-            Workspace
-          </Button>
-          <Button
-            size="sm"
-            variant={page === 'tasks' ? 'secondary' : 'ghost'}
-            aria-pressed={page === 'tasks'}
-            onClick={() => setPage('tasks')}
-          >
-            Tasks
-            {activeTasks !== null && activeTasks > 0 && (
-              <span
-                aria-label={`${activeTasks} active`}
-                className="ml-1 rounded-full bg-blue-600 px-1.5 text-[11px] leading-4 text-white"
+    // Tooltips show page names when the sidebar is collapsed to icons.
+    <TooltipProvider>
+      <SidebarProvider>
+        <AppSidebar
+          badges={{
+            '/tasks': {
+              count: activeTasks ?? 0,
+              label: `${activeTasks} active`,
+              className: 'rounded-full bg-blue-600 px-1.5 text-[11px] leading-4 text-white',
+            },
+            '/counts': {
+              count: openCounts ?? 0,
+              label: `${openCounts} open`,
+              className: 'rounded-full bg-orange-500 px-1.5 text-[11px] leading-4 text-white',
+            },
+          }}
+          footer={
+            <div className="flex flex-col gap-3 p-1 text-xs text-muted-foreground">
+              <Button
+                size="sm"
+                variant={simulating ? 'secondary' : 'outline'}
+                aria-pressed={simulating}
+                title="Simulate the warehouse crew finishing one approved task every 5 seconds"
+                onClick={() => setSimulating((on) => !on)}
+                className="justify-start"
               >
-                {activeTasks}
-              </span>
-            )}
-          </Button>
-          <Button
-            size="sm"
-            variant={page === 'counts' ? 'secondary' : 'ghost'}
-            aria-pressed={page === 'counts'}
-            onClick={() => setPage('counts')}
-          >
-            Cycle counts
-            {openCounts !== null && openCounts > 0 && (
-              <span
-                aria-label={`${openCounts} open`}
-                className="ml-1 rounded-full bg-orange-500 px-1.5 text-[11px] leading-4 text-white"
-              >
-                {openCounts}
-              </span>
-            )}
-          </Button>
-        </nav>
-        <nav className={cn('flex gap-1 lg:hidden', page !== 'workspace' && 'hidden')} aria-label="View">
-          {(['chat', 'map'] as const).map((v) => (
-            <Button
-              key={v}
-              size="sm"
-              variant={view === v ? 'secondary' : 'ghost'}
-              aria-pressed={view === v}
-              onClick={() => setView(v)}
-            >
-              {v === 'chat' ? 'Chat' : 'Floor map'}
-            </Button>
-          ))}
-        </nav>
-        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <Button
-            size="sm"
-            variant={simulating ? 'secondary' : 'outline'}
-            aria-pressed={simulating}
-            title="Simulate the warehouse crew finishing one approved task every 5 seconds"
-            onClick={() => setSimulating((on) => !on)}
-          >
-            {simulating ? <PauseIcon /> : <PlayIcon />}
-            Simulate crew
-            {simulating && (
-              <span aria-hidden className="ml-1 size-2 animate-pulse rounded-full bg-emerald-500" />
-            )}
-          </Button>
-          {model && models.length > 0 && (
-            <ModelPicker models={models} value={model} onChange={changeModel} />
-          )}
-          <label className="flex items-center gap-2">
-            Approving as
-            <Input
-              aria-label="Supervisor name"
-              value={supervisor}
-              onChange={(event) => setSupervisor(event.target.value)}
-              onBlur={() => save(NAME_KEY, supervisor.trim() || 'Supervisor')}
-              className="h-8 w-36"
-            />
-          </label>
-        </div>
-      </header>
-      {/* Large screens: chat and the right-hand column share the width 50/50; the right
-          column is the floor map with the agent activity panel under it. Narrow screens show
-          chat or map one at a time; both stay mounted so switching loses nothing. */}
-      <main className={cn('flex min-h-0 flex-1', page !== 'workspace' && 'hidden')}>
-        <section
-          aria-label="Chat"
-          className={cn(
-            'min-h-0 flex-col lg:flex lg:w-1/2 lg:shrink-0 lg:border-r',
-            view === 'chat' ? 'flex flex-1 lg:flex-none' : 'hidden',
-          )}
-        >
-          <Chat
-            supervisor={supervisor.trim() || 'Supervisor'}
-            model={model}
-            modelLabels={labels}
-            onTurn={handleTurn}
-          />
-        </section>
-        {/* On narrow screens this column scrolls as one page; on large screens the map scrolls
-            on its own and the activity panel keeps a fixed height underneath. */}
-        <aside
-          className={cn(
-            'min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex lg:overflow-hidden',
-            view === 'map' ? 'flex' : 'hidden',
-          )}
-        >
-          <section
-            aria-labelledby="floor-map-heading"
-            className="flex flex-col gap-3 p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
-          >
-            <h2 id="floor-map-heading" className="text-sm font-semibold">
-              Floor map
-            </h2>
-            <FloorMap
-              refreshKey={mapVersion}
-              highlight={highlight}
-              selected={selectedBay}
-              onSelect={setSelectedBay}
-            />
-          </section>
-          <section
-            aria-labelledby="activity-heading"
-            className="flex flex-col gap-3 border-t p-4 lg:h-64 lg:shrink-0 lg:overflow-y-auto"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <h2 id="activity-heading" className="text-sm font-semibold">
-                Agent activity
-              </h2>
-              {activity.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  aria-label="Clear agent activity"
-                  onClick={() => setActivity([])}
-                >
-                  <Trash2Icon />
-                  Clear
-                </Button>
+                {simulating ? <PauseIcon /> : <PlayIcon />}
+                Simulate crew
+                {simulating && (
+                  <span aria-hidden className="ml-auto size-2 animate-pulse rounded-full bg-emerald-500" />
+                )}
+              </Button>
+              {model && models.length > 0 && (
+                <label className="flex flex-col gap-1">
+                  Chat model
+                  <ModelPicker models={models} value={model} onChange={changeModel} />
+                </label>
               )}
+              <label className="flex flex-col gap-1">
+                Approving as
+                <Input
+                  aria-label="Supervisor name"
+                  value={supervisor}
+                  onChange={(event) => setSupervisor(event.target.value)}
+                  onBlur={() => save(NAME_KEY, supervisor.trim() || 'Supervisor')}
+                  className="h-8"
+                />
+              </label>
             </div>
-            <ActivityFeed items={activity} />
-          </section>
-        </aside>
-      </main>
-      {/* Mounted only while shown, so it loads fresh each time it is opened. */}
-      {page === 'tasks' && (
-        <main className="min-h-0 flex-1 overflow-y-auto p-4">
-          <TasksPage onShowOnMap={showOnMap} refreshKey={mapVersion} />
-        </main>
-      )}
-      {page === 'counts' && (
-        <main className="min-h-0 flex-1 overflow-y-auto p-4">
-          <CycleCountsPage
-            supervisor={supervisor.trim() || 'Supervisor'}
-            onShowOnMap={showOnMap}
-            onChange={handleCountEvent}
-            refreshKey={mapVersion}
-          />
-        </main>
-      )}
-    </div>
+          }
+        />
+        <SidebarInset className="h-dvh min-h-0 overflow-hidden">
+          <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
+            <SidebarTrigger />
+            <Separator orientation="vertical" className="mr-1 h-4" />
+            <h1 className="text-sm font-semibold">{pageTitle}</h1>
+            {onWorkspace && (
+              <nav className="ml-auto flex gap-1 lg:hidden" aria-label="View">
+                {(['chat', 'map'] as const).map((v) => (
+                  <Button
+                    key={v}
+                    size="sm"
+                    variant={view === v ? 'secondary' : 'ghost'}
+                    aria-pressed={view === v}
+                    onClick={() => setView(v)}
+                  >
+                    {v === 'chat' ? 'Chat' : 'Floor map'}
+                  </Button>
+                ))}
+              </nav>
+            )}
+          </header>
+
+          {/* The workspace stays mounted (just hidden) on other pages, so the conversation
+              survives moving around the app. Large screens: chat and the right-hand column share
+              the width 50/50. Narrow screens show chat or map one at a time. */}
+          <div className={cn('flex min-h-0 flex-1', !onWorkspace && 'hidden')}>
+            <section
+              aria-label="Chat"
+              className={cn(
+                'min-h-0 flex-col lg:flex lg:w-1/2 lg:shrink-0 lg:border-r',
+                view === 'chat' ? 'flex flex-1 lg:flex-none' : 'hidden',
+              )}
+            >
+              <Chat
+                supervisor={supervisor.trim() || 'Supervisor'}
+                model={model}
+                modelLabels={labels}
+                onTurn={handleTurn}
+              />
+            </section>
+            {/* On narrow screens this column scrolls as one page; on large screens the map scrolls
+                on its own and the activity panel keeps a fixed height underneath. */}
+            <aside
+              className={cn(
+                'min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex lg:overflow-hidden',
+                view === 'map' ? 'flex' : 'hidden',
+              )}
+            >
+              <section
+                aria-labelledby="floor-map-heading"
+                className="flex flex-col gap-3 p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+              >
+                <h2 id="floor-map-heading" className="text-sm font-semibold">
+                  Floor map
+                </h2>
+                <FloorMap
+                  refreshKey={mapVersion}
+                  highlight={highlight}
+                  selected={selectedBay}
+                  onSelect={setSelectedBay}
+                />
+              </section>
+              <section
+                aria-labelledby="activity-heading"
+                className="flex flex-col gap-3 border-t p-4 lg:h-64 lg:shrink-0 lg:overflow-y-auto"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <h2 id="activity-heading" className="text-sm font-semibold">
+                    Agent activity
+                  </h2>
+                  {activity.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      aria-label="Clear agent activity"
+                      onClick={() => setActivity([])}
+                    >
+                      <Trash2Icon />
+                      Clear
+                    </Button>
+                  )}
+                </div>
+                <ActivityFeed items={activity} />
+              </section>
+            </aside>
+          </div>
+
+          {/* The other pages mount only while shown, so they load fresh each time. */}
+          <Routes>
+            <Route path="/" element={<Navigate to="/workspace" replace />} />
+            <Route path="/workspace" element={null} />
+            <Route
+              path="/tasks"
+              element={
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  <TasksPage onShowOnMap={showOnMap} refreshKey={mapVersion} />
+                </div>
+              }
+            />
+            <Route
+              path="/counts"
+              element={
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  <CycleCountsPage
+                    supervisor={supervisor.trim() || 'Supervisor'}
+                    onShowOnMap={showOnMap}
+                    onChange={handleCountEvent}
+                    refreshKey={mapVersion}
+                  />
+                </div>
+              }
+            />
+            <Route path="*" element={<Navigate to="/workspace" replace />} />
+          </Routes>
+        </SidebarInset>
+      </SidebarProvider>
+    </TooltipProvider>
   )
 }

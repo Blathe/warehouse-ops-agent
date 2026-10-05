@@ -2,7 +2,20 @@ import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { ReactElement } from 'react'
+import { MemoryRouter } from 'react-router'
+
 import App from './App'
+
+// The app reads its page from the URL; tests start on the workspace unless told otherwise.
+function renderApp(path = '/workspace'): ReturnType<typeof render> {
+  const ui: ReactElement = (
+    <MemoryRouter initialEntries={[path]}>
+      <App />
+    </MemoryRouter>
+  )
+  return render(ui)
+}
 
 const models = {
   default: 'claude-opus-5-5',
@@ -93,14 +106,14 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('App model picker', () => {
   it('defaults to the backend default and lists prices', async () => {
-    render(<App />)
+    renderApp()
     const picker = await screen.findByLabelText('Model')
     expect(picker).toHaveValue('claude-opus-5-5')
     expect(within(picker).getByText('Claude Haiku 4.5 ($1 / $5 per M tokens)')).toBeInTheDocument()
   })
 
   it('sends the chosen model, remembers it and labels the reply', async () => {
-    render(<App />)
+    renderApp()
     await userEvent.selectOptions(await screen.findByLabelText('Model'), 'claude-haiku-4-5')
     await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
 
@@ -113,14 +126,14 @@ describe('App model picker', () => {
 
   it('restores a remembered model', async () => {
     localStorage.setItem('warehouse-ops.model', 'claude-haiku-4-5')
-    render(<App />)
+    renderApp()
     expect(await screen.findByLabelText('Model')).toHaveValue('claude-haiku-4-5')
   })
 })
 
 describe('App two-column layout', () => {
   it('shows the chat, floor map and activity together', async () => {
-    render(<App />)
+    renderApp()
     expect(screen.getByRole('region', { name: 'Chat' })).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Floor map' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Agent activity' })).toBeInTheDocument()
@@ -144,7 +157,7 @@ describe('App two-column layout', () => {
         },
       ],
     }
-    render(<App />)
+    renderApp()
     await userEvent.type(screen.getByLabelText('Message'), 'Refill it{Enter}')
 
     const activity = await screen.findByRole('list', { name: 'Agent activity' })
@@ -159,26 +172,26 @@ describe('App two-column layout', () => {
 
 describe('App tasks page', () => {
   it('shows the number of active tasks on the Tasks tab', async () => {
-    render(<App />)
+    renderApp()
     expect(await screen.findByLabelText('1 active')).toBeInTheDocument()
   })
 
   it('opens the tasks page and keeps the chat when going back', async () => {
-    render(<App />)
+    renderApp()
     await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
     expect(await screen.findByText('Cheap answer.')).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: /^Tasks/ }))
+    await userEvent.click(screen.getByRole('link', { name: /^Tasks/ }))
     expect(await screen.findByRole('heading', { name: 'Replenishment tasks' })).toBeInTheDocument()
     expect(await screen.findByRole('listitem', { name: 'Task #17' })).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Workspace' }))
+    await userEvent.click(screen.getByRole('link', { name: 'Workspace' }))
     expect(screen.getByText('Cheap answer.')).toBeInTheDocument()
   })
 
   it('shows a task on the map and returns to the workspace', async () => {
-    render(<App />)
-    await userEvent.click(screen.getByRole('button', { name: /^Tasks/ }))
+    renderApp()
+    await userEvent.click(screen.getByRole('link', { name: /^Tasks/ }))
     const card = await screen.findByRole('listitem', { name: 'Task #17' })
 
     await userEvent.click(within(card).getByRole('button', { name: 'Show on map' }))
@@ -190,7 +203,7 @@ describe('App tasks page', () => {
 
 describe('App agent activity', () => {
   it('has nothing to clear until the agent has done something', () => {
-    render(<App />)
+    renderApp()
     expect(screen.queryByRole('button', { name: 'Clear agent activity' })).not.toBeInTheDocument()
   })
 
@@ -205,7 +218,7 @@ describe('App agent activity', () => {
         { tool: 'list_replenishment_needs', input: {}, ok: true, summary: '13 results', approval: 'n/a' },
       ],
     }
-    render(<App />)
+    renderApp()
     await userEvent.type(screen.getByLabelText('Message'), 'What needs stock?{Enter}')
     const activity = await screen.findByRole('list', { name: 'Agent activity' })
     expect(within(activity).getByText('Checked replenishment needs')).toBeInTheDocument()
@@ -226,7 +239,7 @@ describe('App crew simulation', () => {
 
   it('does nothing until it is switched on', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
-    render(<App />)
+    renderApp()
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(20_000)
@@ -240,7 +253,7 @@ describe('App crew simulation', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     tickReplies = [{ completed: { ...activeTasks[0], status: 'DONE' } }]
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    render(<App />)
+    renderApp()
     const toggle = screen.getByRole('button', { name: /Simulate crew/ })
 
     await user.click(toggle)
@@ -270,7 +283,7 @@ describe('App crew simulation', () => {
   it('keeps ticking when nothing is waiting, without adding activity', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    render(<App />)
+    renderApp()
     await user.click(screen.getByRole('button', { name: /Simulate crew/ }))
 
     await act(async () => {
@@ -289,7 +302,7 @@ describe('App crew simulation', () => {
       }),
     ]
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    render(<App />)
+    renderApp()
     const toggle = screen.getByRole('button', { name: /Simulate crew/ })
     await user.click(toggle)
 
@@ -301,5 +314,24 @@ describe('App crew simulation', () => {
     expect(within(activity).getByText('Crew simulation stopped')).toBeInTheDocument()
     expect(within(activity).getByText(/source pallet no longer holds 144/)).toBeInTheDocument()
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  })
+})
+
+describe('App routing', () => {
+  it('opens the workspace from the root URL', async () => {
+    renderApp('/')
+    expect(await screen.findByRole('heading', { name: 'Workspace', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Workspace' })).toHaveAttribute('data-active', 'true')
+  })
+
+  it('opens a page straight from its URL', async () => {
+    renderApp('/counts')
+    expect(await screen.findByRole('heading', { name: 'Cycle counts', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Simulate cycle count' })).toBeInTheDocument()
+  })
+
+  it('sends unknown URLs to the workspace', async () => {
+    renderApp('/nope')
+    expect(await screen.findByRole('heading', { name: 'Workspace', level: 1 })).toBeInTheDocument()
   })
 })
