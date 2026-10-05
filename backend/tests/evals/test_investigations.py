@@ -183,3 +183,17 @@ def test_errors_and_the_summary() -> None:
     summary = summarize_investigations(MODEL, results)
     assert (summary.cases, summary.errors, summary.passed) == (1, 1, 0)
     assert summary.root_cause_accuracy == 0.0
+
+
+def test_excluded_claims_fail_the_top_cause() -> None:
+    case = InvestigationCase(
+        id="shrink",
+        location="A-03-24-1",
+        top_cause_any=[["lost"]],
+        top_cause_excludes=["replenish"],
+    )
+    honest = findings(("Three units lost without a record", "high", ["no picks or adjustments"]))
+    invented = findings(("Lost during a replenishment", "high", []))
+    assert score_investigation(case, ObservedInvestigation([], honest)).passed
+    score = score_investigation(case, ObservedInvestigation([], invented))
+    assert score.root_cause_ok is False and "claims ['replenish']" in score.failures[0]

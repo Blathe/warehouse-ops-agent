@@ -49,6 +49,7 @@ class InvestigationCase(BaseModel):
     location: str  # the discrepancy to investigate
     expect_tools: list[str | list[str]] = []  # a list entry means any one of those tools
     top_cause_any: list[list[str]] = []
+    top_cause_excludes: list[str] = []  # none may appear in the top cause's sentence
     any_cause_any: list[list[str]] = []
     evidence_contains: list[str] = []
     next_steps_any: list[list[str]] = []
@@ -185,7 +186,7 @@ def score_investigation(
         )
 
     root: bool | None = None
-    if case.top_cause_any or case.top_likelihood_not or case.summary_any:
+    if case.top_cause_any or case.top_cause_excludes or case.top_likelihood_not or case.summary_any:
         root = True
         if case.top_cause_any:
             missing = (
@@ -194,6 +195,12 @@ def score_investigation(
             if missing:
                 root = False
                 failures.append(f"top cause mentions none of {missing[0]}")
+        claimed = [
+            w for w in case.top_cause_excludes if causes and w.lower() in causes[0].cause.lower()
+        ]
+        if claimed:
+            root = False
+            failures.append(f"top cause claims {claimed}, which the data doesn't support")
         if case.top_likelihood_not and causes and causes[0].likelihood in case.top_likelihood_not:
             root = False
             failures.append(f"top cause rated {causes[0].likelihood!r} with no evidence")
