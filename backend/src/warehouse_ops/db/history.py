@@ -179,10 +179,12 @@ def _plant_scenarios(
     for loc_id in open_replen:
         used_bays.add(bay(loc_id))
 
+    # Faces with an unconfirmed pick are kept for mid_pick_count, so no other scenario gets a
+    # pick in progress as a red herring.
+    open_pick_locations = {t.location_id for t in stock.picks if t.status == PickTaskStatus.OPEN}
     face_stock = [i for i in stock.inventory if i.location_id in stock.faces]
     pallets = [i for i in stock.inventory if i.lpn]
     healthy = [i for i in face_stock if i.qty > stock.faces[i.location_id].min_qty]
-    open_pick_locations = {t.location_id for t in stock.picks if t.status == PickTaskStatus.OPEN}
 
     # short_replen: a finished replenishment whose crew moved N fewer than recorded.
     done = [t for t in stock.replens if t.status == ReplenishmentStatus.DONE]
@@ -191,6 +193,8 @@ def _plant_scenarios(
         face = next((i for i in face_stock if i.location_id == task.to_location_id), None)
         case_qty = stock.skus[task.sku_id].case_qty
         if source is None or face is None or task.qty < 2 * case_qty:
+            continue
+        if face.location_id in open_pick_locations:
             continue
         if face.qty < case_qty or not free(source.location_id, face.location_id):
             continue

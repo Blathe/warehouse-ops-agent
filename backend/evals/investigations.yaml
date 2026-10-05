@@ -1,0 +1,86 @@
+# Eval cases for the cycle count investigator. Run with:
+#   python -m uv run run-evals --suite investigator
+#
+# Each case investigates the discrepancy a simulated cycle count opens at one planted
+# scenario (see src/warehouse_ops/db/history.py). {tokens} are facts read from the seeded
+# database (src/warehouse_ops/evals/investigations.py), so cases never go stale.
+#
+# Checks (all optional except id and location):
+#   expect_tools            each entry is a tool, or a list of tools where any one will do
+#   top_cause_any           each group needs a match in the top cause (its text and evidence)
+#   any_cause_any           like top_cause_any, but any listed cause may match (top-3 accuracy)
+#   evidence_contains       every string must appear somewhere in the evidence or summary
+#   next_steps_any          each group needs a match in the next steps
+#   summary_any             each group needs a match in the summary
+#   top_cause_excludes      none of these may appear in the top cause (claims the data can't back)
+#   top_likelihood_not      the top cause's likelihood must not be one of these
+#
+# Matching is case-insensitive and on substrings, so "adjust" matches "adjustment".
+
+cases:
+  - id: blank-adjustment
+    location: "{blank_location}"
+    expect_tools: [get_inventory_history]
+    top_cause_any:
+      - [adjust]
+    evidence_contains: ["{blank_user_last}", "{blank_qty}"]
+    next_steps_any:
+      - ["{blank_user_last}", ask, check with, talk to, confirm with]
+
+  - id: mis-slot-missing-pallet
+    location: "{mis_slot_missing}"
+    expect_tools: [[get_nearby_stock, list_discrepancies]]
+    top_cause_any:
+      - [wrong slot, wrong location, misplaced, mis-slot, misslot, mis-slotted, put away, putaway, adjacent, next slot, neighbo, one slot, moved to, moved from, physically moved, relocated, belongs]
+    evidence_contains: ["{mis_slot_found}"]
+
+  - id: mis-slot-found-pallet
+    location: "{mis_slot_found}"
+    expect_tools: [[get_nearby_stock, list_discrepancies]]
+    top_cause_any:
+      - [wrong slot, wrong location, misplaced, mis-slot, misslot, mis-slotted, put away, putaway, adjacent, next slot, neighbo, one slot, moved to, moved from, physically moved, relocated, belongs]
+    evidence_contains: ["{mis_slot_missing}"]
+
+  - id: case-vs-each
+    location: "{case_location}"
+    top_cause_any:
+      - [case]
+      - [instead of, rather than, in cases, as cases, case count, not units, not eaches, not single]
+    next_steps_any:
+      - [recount, count again, re-count]
+
+  - id: short-replen-face
+    location: "{short_face}"
+    expect_tools: [get_inventory_history]
+    top_cause_any:
+      - [replen, refill, restock]
+    evidence_contains: ["{short_pallet}"]
+
+  - id: short-replen-pallet
+    location: "{short_pallet}"
+    expect_tools: [get_inventory_history]
+    top_cause_any:
+      - [replen, refill, restock]
+    evidence_contains: ["{short_face}"]
+
+  - id: mid-pick-count
+    location: "{mid_pick_location}"
+    expect_tools: [list_open_picks]
+    top_cause_any:
+      - [pick]
+      - [open, in progress, in-progress, unconfirmed, not confirmed, not yet confirmed, tote, pending, not been confirmed]
+    next_steps_any:
+      - [recount, count again, re-count, after the pick, once the pick, confirm]
+
+  # Nothing in the data explains this one. A good answer says the units are simply missing
+  # (damage, theft, an unrecorded removal) and doesn't invent a mechanism the data lacks.
+  - id: unexplained-shrink
+    location: "{shrink_location}"
+    expect_tools: [get_inventory_history]
+    top_cause_any:
+      - [lost, damage, theft, shrink, missing, removed, unrecorded, without a record, without a system record, no record, unaccounted]
+    # Phrases that assert a mechanism. Single words like "replenishment" are left out, since a
+    # good answer often lists them as things that did NOT happen.
+    top_cause_excludes: [wrong slot, misplaced, mis-slot, put away in, counted in cases, counted cases, in a tote, refill moved, replenishment moved]
+    next_steps_any:
+      - [recount, count again, re-count, damage, theft, security, camera]

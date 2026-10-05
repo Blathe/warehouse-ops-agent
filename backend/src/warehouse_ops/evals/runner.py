@@ -11,80 +11,36 @@ import argparse
 import json
 import os
 import sys
-import time
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import anthropic
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from sqlalchemy import Engine
-from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, select
 
 from warehouse_ops.agent.loop import Agent, AgentTurn, Conversation
 from warehouse_ops.agent.models import DEFAULT_MODEL, MODEL_OPTIONS, is_supported
-from warehouse_ops.db.engine import BACKEND_DIR, get_engine
+from warehouse_ops.db.engine import BACKEND_DIR
 from warehouse_ops.db.models import ReplenishmentTask
-from warehouse_ops.db.seed import seed_database
 from warehouse_ops.evals.cases import DEFAULT_CASES_PATH, EvalCase, Facts, load_cases, resolve
+from warehouse_ops.evals.common import (
+    AS_OF,
+    RESULTS_DIR,
+    Meter,
+    MeteredClient,
+    cost_usd,
+    seeded_engine,
+)
 from warehouse_ops.evals.scoring import CaseScore, Observed, ObservedCall, score_case
 from warehouse_ops.evals.truth import build_facts
 
-AS_OF = datetime(2026, 6, 1, 13, 0)  # "now" for the seeded data and the agent
-SEED = 42
 APPROVER = "eval-runner"
 MAX_APPROVALS = 3  # per case, a guard against an agent that keeps proposing writes
-RESULTS_DIR = BACKEND_DIR / "evals" / "results"
-
-
-@dataclass
-class Meter:
-    """Token usage and model time for one case (cache tokens are not counted)."""
-
-    input_tokens: int = 0
-    output_tokens: int = 0
-    model_calls: int = 0
-    seconds: float = 0.0
-
-
-class _MeteredMessages:
-    def __init__(self, inner: Any, meter: Meter) -> None:
-        self._inner = inner
-        self._meter = meter
-
-    def create(self, **kwargs: Any) -> Any:
-        started = time.perf_counter()
-        response = self._inner.create(**kwargs)
-        self._meter.seconds += time.perf_counter() - started
-        self._meter.model_calls += 1
-        self._meter.input_tokens += response.usage.input_tokens
-        self._meter.output_tokens += response.usage.output_tokens
-        return response
-
-
-class _MeteredBeta:
-    def __init__(self, messages: _MeteredMessages) -> None:
-        self.messages = messages
-
-
-class MeteredClient:
-    """Stands in for ``Anthropic`` and records the usage of every ``beta.messages.create``."""
-
-    def __init__(self, client: Anthropic, meter: Meter) -> None:
-        self.beta = _MeteredBeta(_MeteredMessages(client.beta.messages, meter))
-
-    def as_anthropic(self) -> Anthropic:
-        return cast(Anthropic, self)
-
-
-def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
-    option = next(m for m in MODEL_OPTIONS if m.id == model)
-    return (input_tokens * option.input_per_mtok + output_tokens * option.output_per_mtok) / 1e6
 
 
 class CaseResult(BaseModel):
@@ -118,17 +74,6 @@ class Summary(BaseModel):
     total_cost_usd: float
     mean_seconds: float
     max_seconds: float
-
-
-def make_memory_engine() -> Engine:
-    # StaticPool keeps one connection, so the in-memory database survives between sessions.
-    return get_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
-
-
-def _seeded_engine() -> Engine:
-    engine = make_memory_engine()
-    seed_database(engine, seed=SEED, as_of=AS_OF)
-    return engine
 
 
 def _agent_made_task(engine: Engine) -> bool:
@@ -224,7 +169,7 @@ def run_evals(
     on_result: Callable[[CaseResult], None] | None = None,
 ) -> list[CaseResult]:
     """Run every case in order. The database is reseeded after any case that writes."""
-    engine = _seeded_engine()
+    engine = seeded_engine()
     with Session(engine) as session:
         facts: Facts = build_facts(session, AS_OF)
 
@@ -232,7 +177,7 @@ def run_evals(
     dirty = False
     for case in cases:
         if dirty:
-            engine, dirty = _seeded_engine(), False
+            engine, dirty = seeded_engine(), False
         result = run_case(resolve(case, facts), client=client, engine=engine, model=model)
         dirty = case.approve_writes
         results.append(result)
@@ -290,17 +235,32 @@ def main() -> None:
     parser.add_argument(
         "--model", default=DEFAULT_MODEL, help=f"one of {[m.id for m in MODEL_OPTIONS]}"
     )
-    parser.add_argument("--cases", type=Path, default=DEFAULT_CASES_PATH)
+    parser.add_argument(
+        "--suite",
+        choices=["agent", "investigator"],
+        default="agent",
+        help="agent: the chat agent's cases; investigator: the cycle count investigator's",
+    )
+    parser.add_argument("--cases", type=Path, default=None, help="defaults to the suite's YAML")
+    parser.add_argument(
+        "--rescore",
+        type=Path,
+        default=None,
+        help="investigator suite: grade a saved report again with the current cases (no API calls)",
+    )
     parser.add_argument("--only", default=None, help="comma-separated case ids to run")
     args = parser.parse_args()
 
     if not is_supported(args.model):
         sys.exit(f"Unsupported model {args.model!r}")
     load_dotenv(BACKEND_DIR.parent / ".env")
-    if not os.environ.get("ANTHROPIC_API_KEY"):
+    if not os.environ.get("ANTHROPIC_API_KEY") and not args.rescore:
         sys.exit("Set ANTHROPIC_API_KEY (in .env or the environment) to run the evals.")
 
-    cases = load_cases(args.cases)
+    if args.suite == "investigator":
+        sys.exit(_main_investigator(args))
+
+    cases = load_cases(args.cases or DEFAULT_CASES_PATH)
     if args.only:
         wanted = set(args.only.split(","))
         unknown = wanted - {c.id for c in cases}
@@ -319,3 +279,38 @@ def main() -> None:
     print(format_summary(summary))
     print(f"\nReport saved to {save_report(summary, results)}")
     sys.exit(0 if summary.passed == summary.cases else 1)
+
+
+def _main_investigator(args: argparse.Namespace) -> int:
+    from warehouse_ops.evals import investigations as inv
+
+    cases = inv.load_investigation_cases(args.cases or inv.DEFAULT_CASES_PATH)
+    if args.rescore:
+        report = json.loads(args.rescore.read_text(encoding="utf-8"))
+        summary, results = inv.rescore_report(report, cases)
+        for result in results:
+            print(inv.format_investigation_result(result))
+        print(inv.format_investigation_summary(summary))
+        return 0 if summary.passed == summary.cases else 1
+    if args.only:
+        wanted = set(args.only.split(","))
+        unknown = wanted - {c.id for c in cases}
+        if unknown:
+            sys.exit(f"Unknown case ids: {', '.join(sorted(unknown))}")
+        cases = [c for c in cases if c.id in wanted]
+
+    print(f"Running {len(cases)} investigator cases on {args.model}...\n")
+    results = inv.run_investigation_evals(
+        cases,
+        client=anthropic.Anthropic(),
+        model=args.model,
+        on_result=lambda r: print(inv.format_investigation_result(r), flush=True),
+    )
+    summary = inv.summarize_investigations(args.model, results)
+    print(inv.format_investigation_summary(summary))
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    path = RESULTS_DIR / f"{stamp}-investigator-{args.model}.json"
+    path.write_text(inv.report_json(summary, results), encoding="utf-8")
+    print(f"\nReport saved to {path}")
+    return 0 if summary.passed == summary.cases else 1

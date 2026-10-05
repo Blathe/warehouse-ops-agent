@@ -11,9 +11,9 @@ from tests.conftest import AS_OF, make_memory_engine
 from warehouse_ops.agent.models import MODEL_OPTIONS
 from warehouse_ops.db.seed import seed_database
 from warehouse_ops.evals.cases import EvalCase, ExpectedCall
+from warehouse_ops.evals.common import cost_usd
 from warehouse_ops.evals.runner import (
     CaseResult,
-    cost_usd,
     format_result,
     run_case,
     run_evals,
