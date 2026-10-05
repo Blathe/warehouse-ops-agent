@@ -171,7 +171,9 @@ Next:
 
 ## Why I built this
 
-<!-- Two or three sentences in your own words: what you wanted to learn and how it connects to your operations background. -->
+I love warehouse operations. I spent seven years building internal warehouse tools, and I'm fascinated by how AI can start to merge into that work: not replacing the people on the floor, but taking on the digging and cross-checking that nobody has time for. The Cycle Count Investigator is the kind of tool that would have saved me hundreds of hours at my last job.
+
+This is a learning project. I built it to get hands-on with AI engineering and automation workflows: tool use, human-in-the-loop approval, MCP, and evals that measure whether a model actually gets things right. Retrieval (RAG) is next on my list. Even so, I designed it around real warehouse problems and real constraints, so that a version of it could realistically help run a warehouse one day.
 
 ## License
 
