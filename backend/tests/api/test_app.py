@@ -19,7 +19,11 @@ def engine() -> Engine:
 
 
 def make_client(engine: Engine, fake: FakeClient) -> TestClient:
-    return TestClient(create_app(engine=engine, client=fake.as_anthropic(), now=lambda: AS_OF))
+    # One investigation at a time: the in-memory test database is a single shared connection.
+    app = create_app(
+        engine=engine, client=fake.as_anthropic(), now=lambda: AS_OF, investigation_workers=1
+    )
+    return TestClient(app)
 
 
 def test_health(engine: Engine) -> None:
@@ -253,3 +257,28 @@ def test_cycle_count_round_trip(engine: Engine) -> None:
     assert accepted["status"] == "ACCEPTED" and accepted["resolution_reason"] == "Checked"
     resolved = api.get("/api/cycle-counts", params={"status": "resolved"}).json()
     assert [c["id"] for c in resolved] == [second]
+
+
+def test_a_cycle_count_starts_investigations_in_the_background(engine: Engine) -> None:
+    findings = {"summary": "Explained.", "causes": [], "next_steps": ["Recount"]}
+    replies = [tool_reply((f"tu_{i}", "submit_findings", findings)) for i in range(8)]
+    api = make_client(engine, FakeClient(*replies))
+
+    run = api.post("/api/simulation/cycle-count").json()
+
+    assert all(d["investigation"]["status"] == "RUNNING" for d in run["discrepancies"])
+    # TestClient runs background tasks before returning, so they're finished now.
+    counts = api.get("/api/cycle-counts").json()
+    assert [c["investigation"]["status"] for c in counts] == ["DONE"] * 8
+    assert counts[0]["investigation"]["summary"] == "Explained."
+
+
+def test_investigate_again(engine: Engine) -> None:
+    api = make_client(engine, FakeClient())  # no replies scripted: investigations fail
+    run = api.post("/api/simulation/cycle-count").json()
+    count_id = run["discrepancies"][0]["id"]
+    assert api.get("/api/cycle-counts").json()[0]["investigation"]["status"] == "FAILED"
+
+    again = api.post(f"/api/cycle-counts/{count_id}/investigate")
+    assert again.status_code == 200 and again.json()["investigation"]["status"] == "RUNNING"
+    assert api.post("/api/cycle-counts/999999/investigate").status_code == 404

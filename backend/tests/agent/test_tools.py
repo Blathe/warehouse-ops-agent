@@ -8,5 +8,25 @@ def test_the_only_write_tool_is_creating_a_proposal() -> None:
 
 
 def test_no_tool_can_approve_reject_or_complete_a_task() -> None:
-    forbidden = ("decide", "approve", "reject", "complete", "finish", "simulat")
+    forbidden = (
+        "decide",
+        "approve",
+        "reject",
+        "complete",
+        "finish",
+        "simulat",
+        "accept",
+        "recount",
+        "adjust",
+    )
     assert not [name for name in TOOLS if any(word in name for word in forbidden)]
+
+
+def test_cycle_count_tools_only_read() -> None:
+    for name in (
+        "list_discrepancies",
+        "get_inventory_history",
+        "get_nearby_stock",
+        "list_open_picks",
+    ):
+        assert name in TOOLS and not TOOLS[name].writes

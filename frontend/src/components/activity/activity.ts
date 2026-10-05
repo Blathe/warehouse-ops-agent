@@ -42,6 +42,18 @@ export function describeToolCall(call: ToolTrace): Omit<ActivityItem, 'id' | 'at
       return { title: `Checked replenishment needs${zone}`, detail: call.summary, tone: 'info' }
     case 'list_short_picks':
       return { title: `Looked up short picks${zone}`, detail: call.summary, tone: 'info' }
+    case 'list_discrepancies':
+      return { title: 'Checked open count discrepancies', detail: call.summary, tone: 'info' }
+    case 'get_inventory_history':
+      return {
+        title: `Read inventory history${input.location ? ` for ${str(input.location)}` : ''}`,
+        detail: call.summary,
+        tone: 'info',
+      }
+    case 'get_nearby_stock':
+      return { title: `Checked stock near ${str(input.location)}`, detail: call.summary, tone: 'info' }
+    case 'list_open_picks':
+      return { title: `Checked open picks at ${str(input.location)}`, detail: call.summary, tone: 'info' }
     case 'find_stock':
       return { title: `Found stock for SKU ${str(input.sku_code)}`, detail: '', tone: 'info' }
     default:

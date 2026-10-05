@@ -9,11 +9,13 @@ The counts are simulated: the counted qty is the system qty plus the hidden
 that table. Like the other write services, these functions don't commit.
 """
 
+import json
 from collections.abc import Sequence
 from datetime import datetime
 from random import Random
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import Session, col, select
 
 from warehouse_ops.db.models import (
@@ -21,6 +23,8 @@ from warehouse_ops.db.models import (
     CycleCount,
     Inventory,
     InventoryTxn,
+    Investigation,
+    InvestigationStatus,
     Location,
     Picker,
     PickTask,
@@ -39,6 +43,27 @@ FALLBACK_COUNTER = "Inventory clerk"
 Key = tuple[int, int]  # (location_id, sku_id)
 
 
+class Cause(BaseModel):
+    cause: str = Field(description="What probably happened, in one sentence.")
+    likelihood: Literal["high", "medium", "low"]
+    evidence: list[str] = Field(
+        description="Specific facts from the data: dates, quantities, users, refs, locations."
+    )
+
+
+class InvestigationOut(BaseModel):
+    id: int
+    status: InvestigationStatus
+    model: str
+    summary: str | None
+    causes: list[Cause]
+    next_steps: list[str]
+    error: str | None
+    tool_calls: int
+    started_at: LocalDateTime
+    finished_at: LocalDateTime | None
+
+
 class CycleCountOut(BaseModel):
     id: int
     location: str
@@ -55,6 +80,7 @@ class CycleCountOut(BaseModel):
     resolved_by: str | None
     resolved_at: LocalDateTime | None
     resolution_reason: str | None
+    investigation: InvestigationOut | None = None  # the latest one
 
 
 class CycleCountRun(BaseModel):
@@ -336,4 +362,30 @@ def _to_out(session: Session, count: CycleCount) -> CycleCountOut:
         resolved_by=count.resolved_by,
         resolved_at=count.resolved_at,
         resolution_reason=count.resolution_reason,
+        investigation=latest_investigation(session, count.id),
+    )
+
+
+def latest_investigation(session: Session, count_id: int) -> InvestigationOut | None:
+    row = session.exec(
+        select(Investigation)
+        .where(Investigation.cycle_count_id == count_id)
+        .order_by(col(Investigation.id).desc())
+    ).first()
+    return investigation_out(row) if row else None
+
+
+def investigation_out(row: Investigation) -> InvestigationOut:
+    assert row.id is not None
+    return InvestigationOut(
+        id=row.id,
+        status=row.status,
+        model=row.model,
+        summary=row.summary,
+        causes=[Cause.model_validate(c) for c in json.loads(row.causes_json)],
+        next_steps=json.loads(row.next_steps_json),
+        error=row.error,
+        tool_calls=row.tool_calls,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
     )

@@ -184,9 +184,16 @@ Every new discrepancy is investigated automatically in the background, on a low-
 | `get_nearby_stock` | stock and recent counts in the neighbouring bays and slots |
 | `list_open_picks` | open pick tasks at a location |
 
-It returns a summary, likely causes ranked with evidence that cites ledger rows, and next steps
+It ends by calling `submit_findings` (validated; an invalid submission gets one more try) and
+returns a summary, likely causes ranked with evidence that cites ledger rows, and next steps
 (recount, check a named location, ask a named user). The same tools are available to the chat,
 so a supervisor can ask "why is A-03-04-1 off?".
+
+Investigations run in a background thread pool (4 at a time) after the count's response is
+sent, so the page shows them as running and polls until they finish. A failed investigation
+(no API key, an API error) records a readable error and can be run again from the page.
+`INVESTIGATOR_MODEL` overrides the model. The simulated count shows a progress bar for a few
+seconds, so it feels like a clerk walking the aisles.
 
 ### Resolving a discrepancy (human only)
 

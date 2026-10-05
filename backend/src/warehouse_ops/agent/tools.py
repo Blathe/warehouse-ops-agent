@@ -13,7 +13,15 @@ from anthropic.types.beta import BetaToolParam
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 
-from warehouse_ops.services import inventory, picking, replenishment, replenishment_tasks
+from warehouse_ops.db.models import TxnType
+from warehouse_ops.services import (
+    cycle_counts,
+    inventory,
+    ledger,
+    picking,
+    replenishment,
+    replenishment_tasks,
+)
 from warehouse_ops.services.schemas import LocalDateTime, Zone
 
 
@@ -65,6 +73,28 @@ class CreateReplenishmentTaskInput(BaseModel):
     to_location: str = Field(description="The SKU's pick face, e.g. A-03-12-1.")
     qty: int = Field(gt=0, description="Units to move.")
     reason: str = Field(description="Why, e.g. 'empty after 3 short picks'.")
+
+
+class ListDiscrepanciesInput(BaseModel):
+    pass
+
+
+class GetInventoryHistoryInput(BaseModel):
+    location: str | None = Field(None, description="Location code, e.g. A-03-12-1.")
+    sku_code: str | None = Field(None, description="SKU code, e.g. 10442.")
+    user: str | None = Field(None, description="Only changes by this person (part of a name).")
+    type: TxnType | None = Field(None, description="Only this kind of change.")
+    since: LocalDateTime | None = Field(None, description="Only changes at or after this time.")
+    limit: int = Field(50, ge=1, le=100, description="Newest rows to return.")
+
+
+class GetNearbyStockInput(BaseModel):
+    location: str = Field(description="Location code at the centre, e.g. A-03-12-3.")
+    bays: int = Field(2, ge=1, le=5, description="Bays either side, same aisle.")
+
+
+class ListOpenPicksInput(BaseModel):
+    location: str = Field(description="Location code, usually a pick face.")
 
 
 def _create_task(
@@ -126,6 +156,55 @@ TOOLS: dict[str, ToolSpec] = {
             run=lambda s, a, ctx: replenishment.list_replenishment_needs(
                 s, zone=a.zone, include_open_demand=a.include_open_demand
             ),
+        ),
+        ToolSpec(
+            name="list_discrepancies",
+            description=(
+                "List open cycle count discrepancies: location, SKU, case qty, LPN, system vs "
+                "counted qty, variance (counted minus system), who counted and when, and the "
+                "latest AI investigation if there is one. Matching overages and shortages "
+                "between discrepancies often explain each other."
+            ),
+            input_model=ListDiscrepanciesInput,
+            run=lambda s, a, ctx: cycle_counts.list_cycle_counts(s, cycle_counts.OPEN_STATUSES),
+        ),
+        ToolSpec(
+            name="get_inventory_history",
+            description=(
+                "The inventory ledger: every stock change (opening balance, receipt, pick, "
+                "replenishment out/in, manual adjustment, count adjustment) with time, qty "
+                "change, user, reason (blank when none was given), what caused it (ref) and "
+                "the balance right after. Filter by location, SKU and/or user; oldest first."
+            ),
+            input_model=GetInventoryHistoryInput,
+            run=lambda s, a, ctx: ledger.get_inventory_history(
+                s,
+                location=a.location,
+                sku_code=a.sku_code,
+                user=a.user,
+                txn_type=a.type,
+                since=a.since,
+                limit=a.limit,
+            ),
+        ),
+        ToolSpec(
+            name="get_nearby_stock",
+            description=(
+                "Every slot in the same aisle near a location (pick faces and reserve "
+                "slots): what the system says is there (SKU, LPN, qty) and its latest count. "
+                "Use it to spot stock put away in the wrong slot."
+            ),
+            input_model=GetNearbyStockInput,
+            run=lambda s, a, ctx: ledger.get_nearby_stock(s, a.location, a.bays),
+        ),
+        ToolSpec(
+            name="list_open_picks",
+            description=(
+                "Pick tasks at a location that aren't confirmed yet. A picker may already "
+                "have the units in a tote, so a count taken now would look short by that qty."
+            ),
+            input_model=ListOpenPicksInput,
+            run=lambda s, a, ctx: ledger.list_open_picks(s, a.location),
         ),
         ToolSpec(
             name="create_replenishment_task",

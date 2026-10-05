@@ -15,12 +15,13 @@ from typing import Literal
 import anthropic
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine
 from sqlmodel import Session
 
 from warehouse_ops import clock
+from warehouse_ops.agent.investigator import Investigator
 from warehouse_ops.agent.loop import Agent, AgentStateError, AgentTurn, Conversation
 from warehouse_ops.agent.models import DEFAULT_MODEL, MODEL_OPTIONS, ModelOption, is_supported
 from warehouse_ops.db.engine import BACKEND_DIR, get_engine, readonly_session
@@ -85,11 +86,14 @@ def create_app(
     engine: Engine | None = None,
     client: anthropic.Anthropic | None = None,
     now: Callable[[], datetime] = clock.now,
+    investigation_workers: int = 4,
 ) -> FastAPI:
     """Build the app; tests pass an in-memory engine and a fake Claude client."""
     app = FastAPI(title="Warehouse Ops Agent")
     engine = engine or get_engine()
-    agent = Agent(client or anthropic.Anthropic(), engine, now)
+    client = client or anthropic.Anthropic()
+    agent = Agent(client, engine, now)
+    investigator = Investigator(client, engine, now, parallel=investigation_workers)
     conversations: dict[str, Conversation] = {}
     lock = Lock()  # one request at a time per process: conversations aren't thread-safe
     simulation_lock = Lock()  # so two overlapping ticks can't finish the same task twice
@@ -142,12 +146,37 @@ def create_app(
             return TickResponse(completed=completed)
 
     @app.post("/api/simulation/cycle-count")
-    def simulate_cycle_count() -> CycleCountRun:
-        """Simulated clerk: count ~30 locations, including every planted problem."""
+    def simulate_cycle_count(background: BackgroundTasks) -> CycleCountRun:
+        """Simulated clerk: count ~30 locations, including every planted problem.
+
+        Each discrepancy it opens is investigated by the AI in the background; the response
+        already shows those investigations as RUNNING.
+        """
         with simulation_lock, Session(engine) as session:
             result = cycle_counts.simulate_cycle_count(session, rng=Random(), now=now())
+            ids = [investigator.start(session, d.id) for d in result.discrepancies]
+            result.discrepancies = [
+                cycle_counts.get_cycle_count(session, d.id) for d in result.discrepancies
+            ]
             session.commit()
-            return result
+        background.add_task(investigator.run_many, ids)
+        return result
+
+    @app.post("/api/cycle-counts/{count_id}/investigate")
+    def investigate(count_id: int, background: BackgroundTasks) -> CycleCountOut:
+        """Run the AI investigation again (e.g. after a failure). Open discrepancies only."""
+        with simulation_lock, Session(engine) as session:
+            try:
+                count = cycle_counts.get_cycle_count(session, count_id)
+            except NotFoundError as exc:
+                raise HTTPException(404, str(exc)) from exc
+            if count.status != CountStatus.DISCREPANCY:
+                raise HTTPException(409, f"Count #{count_id} is not an open discrepancy")
+            investigation_id = investigator.start(session, count_id)
+            result = cycle_counts.get_cycle_count(session, count_id)
+            session.commit()
+        background.add_task(investigator.run, investigation_id)
+        return result
 
     @app.get("/api/cycle-counts")
     def list_counts(status: CountFilter = "open") -> list[CycleCountOut]:
