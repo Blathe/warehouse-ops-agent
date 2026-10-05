@@ -128,3 +128,12 @@
     @apply font-sans;
     }
 }
+/* The simulated cycle count's progress bar fills from empty to full. */
+@keyframes count-progress {
+  from {
+    width: 0%;
+  }
+  to {
+    width: 100%;
+  }
+}

@@ -1,6 +1,8 @@
 import { ClipboardCheckIcon, MapPinIcon, RefreshCwIcon, RotateCcwIcon } from 'lucide-react'
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
+import { CountingProgress } from '@/components/counts/CountingProgress'
+import { InvestigationPanel } from '@/components/counts/InvestigationPanel'
 import { COUNT_FILTERS, COUNT_STATUS, formatVariance } from '@/components/counts/status'
 import { formatTime } from '@/components/tasks/status'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import {
   acceptCycleCount,
   getCycleCounts,
+  investigateAgain,
   requestRecount,
   simulateCycleCount,
   type CountFilter,
@@ -16,6 +19,9 @@ import {
   type CycleCountRun,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
+
+const COUNT_DURATION_MS = 4000 // how long the simulated clerk takes, for the progress bar
+const POLL_MS = 2500 // how often to check on running investigations
 
 const EMPTY_TEXT: Record<CountFilter, string> = {
   open: 'No open discrepancies. Run a cycle count to check some locations.',
@@ -28,11 +34,17 @@ interface CycleCountsPageProps {
   onShowOnMap: (location: string) => void
   onChange?: (event: CountEvent) => void // so the app can refresh the map and log activity
   refreshKey?: number
+  countDurationMs?: number // tests shorten these two
+  pollMs?: number
 }
 
 export type CountEvent =
   | { kind: 'counted'; run: CycleCountRun }
-  | { kind: 'accepted' | 'recount'; count: CycleCount }
+  | { kind: 'accepted' | 'recount' | 'investigated'; count: CycleCount }
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 // Cycle counts: run a (simulated) count, then accept or recount each discrepancy it opens.
 export function CycleCountsPage({
@@ -40,28 +52,49 @@ export function CycleCountsPage({
   onShowOnMap,
   onChange,
   refreshKey = 0,
+  countDurationMs = COUNT_DURATION_MS,
+  pollMs = POLL_MS,
 }: CycleCountsPageProps) {
   const [filter, setFilter] = useState<CountFilter>('open')
   const [counts, setCounts] = useState<CycleCount[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastRun, setLastRun] = useState<CycleCountRun | null>(null)
   const [counting, setCounting] = useState(false)
+  // Investigation status per count as last seen, to notice when one finishes.
+  const seen = useRef(new Map<number, string>())
 
   const load = useCallback(() => {
     getCycleCounts(filter)
       .then((loaded) => {
+        for (const count of loaded) {
+          const status = count.investigation?.status
+          if (seen.current.get(count.id) === 'RUNNING' && status && status !== 'RUNNING') {
+            onChange?.({ kind: 'investigated', count })
+          }
+          if (status) seen.current.set(count.id, status)
+        }
         setCounts(loaded)
         setError(null)
       })
       .catch((e: Error) => setError(e.message))
-  }, [filter])
+  }, [filter, onChange])
 
   useEffect(load, [load, refreshKey])
 
+  // While any investigation is still running, check again in a moment.
+  const running = counts?.some((c) => c.investigation?.status === 'RUNNING') ?? false
+  useEffect(() => {
+    if (!running) return
+    const timer = setTimeout(load, pollMs)
+    return () => clearTimeout(timer)
+  }, [running, counts, load, pollMs])
+
   function runCount() {
     setCounting(true)
-    simulateCycleCount()
-      .then((run) => {
+    setLastRun(null)
+    // The count itself is instant; wait a few seconds so it feels like a clerk walking the aisles.
+    Promise.all([simulateCycleCount(), wait(countDurationMs)])
+      .then(([run]) => {
         setLastRun(run)
         onChange?.({ kind: 'counted', run })
         load()
@@ -73,6 +106,12 @@ export function CycleCountsPage({
   function resolved(kind: 'accepted' | 'recount', count: CycleCount) {
     onChange?.({ kind, count })
     load()
+  }
+
+  function retry(count: CycleCount) {
+    investigateAgain(count.id)
+      .then(load)
+      .catch((e: Error) => setError(e.message))
   }
 
   return (
@@ -96,12 +135,14 @@ export function CycleCountsPage({
         </div>
       </div>
 
+      {counting && <CountingProgress durationMs={countDurationMs} />}
       {lastRun && (
         <p role="status" className="rounded-lg bg-muted px-3 py-2 text-sm">
           Counted {lastRun.counted} locations: {lastRun.matched} matched,{' '}
           {lastRun.discrepancies.length === 1
             ? '1 discrepancy opened.'
             : `${lastRun.discrepancies.length} discrepancies opened.`}
+          {lastRun.discrepancies.length > 0 && ' The AI is investigating each one.'}
         </p>
       )}
 
@@ -135,6 +176,7 @@ export function CycleCountsPage({
               supervisor={supervisor}
               onShowOnMap={onShowOnMap}
               onResolved={resolved}
+              onRetry={() => retry(count)}
             />
           ))}
         </ul>
@@ -148,11 +190,13 @@ function CountCard({
   supervisor,
   onShowOnMap,
   onResolved,
+  onRetry,
 }: {
   count: CycleCount
   supervisor: string
   onShowOnMap: (location: string) => void
   onResolved: (kind: 'accepted' | 'recount', count: CycleCount) => void
+  onRetry: () => void
 }) {
   const [accepting, setAccepting] = useState(false)
   const [reason, setReason] = useState('')
@@ -225,6 +269,14 @@ function CountCard({
           Show on map
         </Button>
       </div>
+
+      {count.investigation && (
+        <InvestigationPanel
+          investigation={count.investigation}
+          defaultOpen={open}
+          onRetry={open ? onRetry : undefined}
+        />
+      )}
 
       {open && !accepting && (
         <div className="flex flex-wrap gap-2">

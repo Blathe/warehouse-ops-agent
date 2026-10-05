@@ -162,6 +162,27 @@ export function tickSimulation(): Promise<TickResponse> {
 export type CountStatus = 'MATCHED' | 'DISCREPANCY' | 'RECOUNT_REQUESTED' | 'RECOUNTED' | 'ACCEPTED'
 export type CountFilter = 'open' | 'resolved' | 'all'
 
+export type InvestigationStatus = 'RUNNING' | 'DONE' | 'FAILED'
+
+export interface Cause {
+  cause: string
+  likelihood: 'high' | 'medium' | 'low'
+  evidence: string[]
+}
+
+export interface Investigation {
+  id: number
+  status: InvestigationStatus
+  model: string
+  summary: string | null
+  causes: Cause[]
+  next_steps: string[]
+  error: string | null
+  tool_calls: number
+  started_at: string
+  finished_at: string | null
+}
+
 export interface CycleCount {
   id: number
   location: string
@@ -178,6 +199,7 @@ export interface CycleCount {
   resolved_by: string | null
   resolved_at: string | null
   resolution_reason: string | null
+  investigation: Investigation | null // the latest AI investigation
 }
 
 export interface CycleCountRun {
@@ -200,4 +222,8 @@ export function acceptCycleCount(id: number, decidedBy: string, reason: string):
 
 export function requestRecount(id: number, decidedBy: string): Promise<CycleCount> {
   return post(`/api/cycle-counts/${id}/recount`, { decided_by: decidedBy })
+}
+
+export function investigateAgain(id: number): Promise<CycleCount> {
+  return post(`/api/cycle-counts/${id}/investigate`, {})
 }

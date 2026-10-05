@@ -1,5 +1,5 @@
 import { PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { ActivityFeed } from '@/components/activity/ActivityFeed'
 import {
@@ -46,6 +46,34 @@ function save(key: string, value: string) {
   } catch {
     // Not remembered between visits, which is fine.
   }
+}
+
+function countActivity(event: CountEvent): ActivityItem {
+  if (event.kind === 'counted') {
+    const opened = event.run.discrepancies.length
+    return activityNote(
+      'Cycle count finished',
+      `${event.run.counted} locations counted, ${opened} discrepancies opened`,
+      opened > 0 ? 'warning' : 'success',
+    )
+  }
+  const { count } = event
+  if (event.kind === 'investigated') {
+    const done = count.investigation?.status === 'DONE'
+    return activityNote(
+      done ? `AI investigated ${count.location}` : `AI investigation failed at ${count.location}`,
+      (done ? count.investigation?.summary : count.investigation?.error) ?? '',
+      done ? 'info' : 'error',
+    )
+  }
+  return activityNote(
+    event.kind === 'accepted'
+      ? `Count accepted at ${count.location}`
+      : `Recount requested at ${count.location}`,
+    `${formatVariance(count.variance)} × SKU ${count.sku_code}` +
+      (count.resolution_reason ? `: ${count.resolution_reason}` : ''),
+    event.kind === 'accepted' ? 'success' : 'info',
+  )
 }
 
 export default function App() {
@@ -125,25 +153,12 @@ export default function App() {
   }
 
   // From the Cycle counts page: log it and refresh the map, whose bays show open counts.
-  function handleCountEvent(event: CountEvent) {
-    const note =
-      event.kind === 'counted'
-        ? activityNote(
-            'Cycle count finished',
-            `${event.run.counted} locations counted, ${event.run.discrepancies.length} discrepancies opened`,
-            event.run.discrepancies.length > 0 ? 'warning' : 'success',
-          )
-        : activityNote(
-            event.kind === 'accepted'
-              ? `Count accepted at ${event.count.location}`
-              : `Recount requested at ${event.count.location}`,
-            `${formatVariance(event.count.variance)} × SKU ${event.count.sku_code}` +
-              (event.count.resolution_reason ? `: ${event.count.resolution_reason}` : ''),
-            event.kind === 'accepted' ? 'success' : 'info',
-          )
-    setActivity((current) => [...current, note])
-    setMapVersion((version) => version + 1)
-  }
+  // useCallback keeps the same function between renders (it only uses state setters), so
+  // the page doesn't reload its counts every time the app re-renders.
+  const handleCountEvent = useCallback((event: CountEvent) => {
+    setActivity((current) => [...current, countActivity(event)])
+    if (event.kind !== 'investigated') setMapVersion((version) => version + 1)
+  }, [])
 
   function changeModel(id: string) {
     setModel(id)

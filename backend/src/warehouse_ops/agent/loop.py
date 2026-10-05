@@ -9,8 +9,6 @@ The conversation history is append-only: each response's content goes back exact
 as Claude returned it (thinking blocks included).
 """
 
-import json
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -23,17 +21,15 @@ from anthropic.types.beta import (
     BetaToolResultBlockParam,
     BetaToolUseBlock,
 )
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 from sqlalchemy import Engine
-from sqlmodel import Session
 
 from warehouse_ops import clock
+from warehouse_ops.agent.execution import ToolTrace, execute_tool_call
 from warehouse_ops.agent.models import DEFAULT_MODEL, is_supported, request_options
 from warehouse_ops.agent.tools import TOOLS, ToolContext
-from warehouse_ops.db.engine import readonly_session
 from warehouse_ops.db.models import Approval
-from warehouse_ops.services.errors import NotFoundError, RuleViolationError
-from warehouse_ops.tool_log import WAREHOUSE_CONTEXT, record_tool_call, summarize
+from warehouse_ops.tool_log import WAREHOUSE_CONTEXT, record_tool_call
 
 MAX_TOKENS = 16000
 MAX_STEPS = 12  # model calls per user message, a guard against runaway loops
@@ -51,21 +47,19 @@ Creating a replenishment task needs the supervisor's approval, which the app ask
 when you call create_replenishment_task. Only call it when the supervisor wants stock
 moved; when they only ask what needs replenishing, list the suggested moves instead.
 Use the suggested qty and source from list_replenishment_needs unless told otherwise.
-Skip faces that already have an open task or have no reserve stock, and say why."""
+Skip faces that already have an open task or have no reserve stock, and say why.
+
+You can also look into cycle count discrepancies with list_discrepancies,
+get_inventory_history, get_nearby_stock and list_open_picks. Most discrepancies already
+have an AI investigation attached; build on it, and check the data yourself when asked
+why a count is off. Accepting a count or asking for a recount is the supervisor's call
+on the Cycle counts page; you can't do either, so point them there."""
 
 TOOL_PARAMS = [spec.to_param() for spec in TOOLS.values()]
 
 
 class AgentStateError(RuntimeError):
     """The request doesn't fit the conversation's state (e.g. approving with nothing pending)."""
-
-
-class ToolTrace(BaseModel):
-    tool: str
-    input: dict[str, Any]
-    ok: bool
-    summary: str
-    approval: Approval = Approval.NOT_APPLICABLE
 
 
 class PendingAction(BaseModel):
@@ -198,46 +192,11 @@ class Agent:
         traces: list[ToolTrace],
         approval: Approval = Approval.NOT_APPLICABLE,
     ) -> BetaToolResultBlockParam:
-        started = time.perf_counter()
-        args = dict(call.input)
-        spec = TOOLS.get(call.name)
-        content: str
-        try:
-            if spec is None:
-                raise NotFoundError(f"Unknown tool {call.name!r}")
-            parsed = spec.input_model.model_validate(args)
-            if spec.writes:
-                with Session(self._engine) as session:
-                    result = spec.run(session, parsed, ctx)
-                    session.commit()
-            else:
-                with readonly_session(self._engine) as session:
-                    result = spec.run(session, parsed, ctx)
-            content = _to_json(result)
-            summary, ok = summarize(result), True
-        except (NotFoundError, RuleViolationError, ValidationError) as exc:
-            content = f"Error: {exc}"
-            summary, ok = f"error: {exc}"[:200], False
-
-        record_tool_call(
-            self._engine,
-            ts=ctx.now,
-            session_id=conversation.id,
-            tool=call.name,
-            args=args,
-            summary=summary,
-            duration_ms=round((time.perf_counter() - started) * 1000),
-            approval=approval,
+        block, trace = execute_tool_call(
+            self._engine, TOOLS, call, ctx, session_id=conversation.id, approval=approval
         )
-        traces.append(
-            ToolTrace(tool=call.name, input=args, ok=ok, summary=summary, approval=approval)
-        )
-        return {
-            "type": "tool_result",
-            "tool_use_id": call.id,
-            "content": content,
-            "is_error": not ok,
-        }
+        traces.append(trace)
+        return block
 
     def _reject(
         self,
@@ -283,9 +242,3 @@ class Agent:
             reply=reply,
             tool_calls=traces,
         )
-
-
-def _to_json(result: BaseModel | list[Any]) -> str:
-    if isinstance(result, BaseModel):
-        return result.model_dump_json()
-    return json.dumps([r.model_dump(mode="json") for r in result])

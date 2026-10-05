@@ -88,6 +88,12 @@ class CountStatus(StrEnum):
     ACCEPTED = "ACCEPTED"  # the system was adjusted to the count
 
 
+class InvestigationStatus(StrEnum):
+    RUNNING = "RUNNING"
+    DONE = "DONE"
+    FAILED = "FAILED"
+
+
 class Approval(StrEnum):
     NOT_APPLICABLE = "n/a"
     APPROVED = "approved"
@@ -269,3 +275,21 @@ class CycleCount(SQLModel, table=True):
     resolved_by: str | None = None
     resolved_at: NaiveDatetime | None = None
     resolution_reason: str | None = None
+
+
+class Investigation(SQLModel, table=True):
+    """The AI's explanation of one discrepancy: likely causes with evidence, and next steps."""
+
+    __tablename__ = "investigation"
+
+    id: int | None = Field(default=None, primary_key=True)
+    cycle_count_id: int = Field(foreign_key="cycle_count.id", index=True)
+    model: str
+    status: InvestigationStatus = Field(index=True)
+    summary: str | None = None
+    causes_json: str = "[]"  # list of {cause, likelihood, evidence[]}
+    next_steps_json: str = "[]"  # list of strings
+    error: str | None = None
+    tool_calls: int = 0
+    started_at: NaiveDatetime
+    finished_at: NaiveDatetime | None = None
