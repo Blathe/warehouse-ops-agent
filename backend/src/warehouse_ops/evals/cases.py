@@ -64,7 +64,7 @@ def load_cases(path: Path = DEFAULT_CASES_PATH) -> list[EvalCase]:
     return cases
 
 
-def placeholders(case: EvalCase) -> set[str]:
+def placeholders(case: BaseModel) -> set[str]:
     """Every ``{token}`` the case uses."""
     found: set[str] = set()
 
@@ -83,22 +83,23 @@ def placeholders(case: EvalCase) -> set[str]:
 
 
 def resolve(case: EvalCase, facts: Facts) -> EvalCase:
-    """Fill the case's ``{token}`` placeholders from ``facts``.
+    """Fill the case's ``{token}`` placeholders from ``facts``."""
+    return EvalCase.model_validate(resolve_values(case.model_dump(), facts))
+
+
+def resolve_values(value: Any, facts: Facts) -> Any:
+    """Fill ``{token}`` placeholders anywhere in nested lists and dicts.
 
     A value that is exactly one token keeps the fact's own type, so ``qty: "{need_qty}"``
     becomes an int; a token inside a longer string is inserted as text.
     """
-
-    def fill(value: Any) -> Any:
-        if isinstance(value, str):
-            whole = _WHOLE_TOKEN.match(value)
-            if whole:
-                return facts[whole.group(1)]
-            return re.sub(r"\{(\w+)\}", lambda m: str(facts[m.group(1)]), value)
-        if isinstance(value, list):
-            return [fill(item) for item in value]
-        if isinstance(value, dict):
-            return {key: fill(item) for key, item in value.items()}
-        return value
-
-    return EvalCase.model_validate(fill(case.model_dump()))
+    if isinstance(value, str):
+        whole = _WHOLE_TOKEN.match(value)
+        if whole:
+            return facts[whole.group(1)]
+        return re.sub(r"\{(\w+)\}", lambda m: str(facts[m.group(1)]), value)
+    if isinstance(value, list):
+        return [resolve_values(item, facts) for item in value]
+    if isinstance(value, dict):
+        return {key: resolve_values(item, facts) for key, item in value.items()}
+    return value

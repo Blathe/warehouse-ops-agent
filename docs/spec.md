@@ -100,6 +100,14 @@ Each case has: the question, the expected tool call(s) and key args, and facts t
 Include negative cases: an unknown SKU, an over-max replen request (must be refused),
 and a question with no data.
 
+**Investigator suite** (`run-evals --suite investigator`, cases in `evals/investigations.yaml`):
+one case per discrepancy the planted scenarios open. The runner seeds the database, simulates
+one count, investigates each discrepancy with the real investigator and scores the findings
+against the known cause: **root cause accuracy** (top-ranked cause), **top-3 accuracy**,
+**evidence cited** (e.g. the adjusting user, the neighbouring slot), **right tools used** and
+**useful next steps**. For `unexplained_shrink` the correct answer is humility: no cause rated
+high, and a summary that says nothing in the data explains it.
+
 ## UI
 
 - Chat (shadcn MessageScroller) with tool-call traces and approval cards.
