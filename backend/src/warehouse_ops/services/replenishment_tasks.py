@@ -10,14 +10,17 @@ from datetime import datetime
 
 from sqlmodel import Session, col, func, select
 
+from warehouse_ops import clock
 from warehouse_ops.db.models import (
     Inventory,
+    InventoryTxn,
     Location,
     LocationType,
     PickFace,
     ReplenishmentStatus,
     ReplenishmentTask,
     Sku,
+    TxnType,
 )
 from warehouse_ops.services.errors import NotFoundError, RuleViolationError
 from warehouse_ops.services.inventory import get_sku
@@ -25,6 +28,7 @@ from warehouse_ops.services.replenishment import OPEN_REPLENISHMENT_STATUSES
 from warehouse_ops.services.schemas import ReplenishmentTaskOut
 
 MAX_RESULTS = 200
+CREW = "Floor crew (simulated)"  # who the simulated moves are logged as
 
 
 def get_location(session: Session, code: str) -> Location:
@@ -138,11 +142,14 @@ def decide_replenishment_task(
     return _to_out(session, task)
 
 
-def complete_next_replenishment_task(session: Session) -> ReplenishmentTaskOut | None:
+def complete_next_replenishment_task(
+    session: Session, now: datetime | None = None
+) -> ReplenishmentTaskOut | None:
     """Simulate the floor crew finishing the oldest approved task, moving the stock for real.
 
     The pick face gains ``qty`` and the source pallet loses it (an emptied pallet slot is
-    freed). Returns the finished task, or None when nothing is approved. Only APPROVED
+    freed), and both moves go in the inventory ledger stamped ``now`` (default: the warehouse
+    clock). Returns the finished task, or None when nothing is approved. Only APPROVED
     tasks are touched, so a person always decides first. This is not an agent or MCP tool:
     a model can't complete tasks, only the API's simulation endpoint calls it.
     """
@@ -183,6 +190,32 @@ def complete_next_replenishment_task(session: Session) -> ReplenishmentTaskOut |
         session.delete(pallet)
     else:
         session.add(pallet)
+
+    moved_at = now or clock.now()
+    ref = f"replenishment_task:{task.id}"
+    session.add_all(
+        [
+            InventoryTxn(
+                ts=moved_at,
+                location_id=task.from_location_id,
+                sku_id=task.sku_id,
+                lpn=task.lpn,
+                qty_change=-task.qty,
+                type=TxnType.REPLEN_OUT,
+                user=CREW,
+                ref=ref,
+            ),
+            InventoryTxn(
+                ts=moved_at,
+                location_id=task.to_location_id,
+                sku_id=task.sku_id,
+                qty_change=task.qty,
+                type=TxnType.REPLEN_IN,
+                user=CREW,
+                ref=ref,
+            ),
+        ]
+    )
 
     task.status = ReplenishmentStatus.DONE
     session.add(task)

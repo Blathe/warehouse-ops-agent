@@ -70,6 +70,16 @@ class ReplenishmentStatus(StrEnum):
     DONE = "DONE"
 
 
+class TxnType(StrEnum):
+    OPENING = "OPENING"  # balance at the start of the recorded history
+    RECEIVE = "RECEIVE"
+    PICK = "PICK"
+    REPLEN_OUT = "REPLEN_OUT"
+    REPLEN_IN = "REPLEN_IN"
+    ADJUSTMENT = "ADJUSTMENT"  # manual, by a person
+    COUNT_ADJUSTMENT = "COUNT_ADJUSTMENT"  # accepting a cycle count
+
+
 class Approval(StrEnum):
     NOT_APPLICABLE = "n/a"
     APPROVED = "approved"
@@ -192,3 +202,42 @@ class ToolCallLog(SQLModel, table=True):
     result_summary: str
     duration_ms: int
     approval: Approval = Approval.NOT_APPLICABLE
+
+
+class InventoryTxn(SQLModel, table=True):
+    """The inventory ledger: one row per stock change.
+
+    For every location and SKU, the sum of ``qty_change`` equals the ``inventory`` qty.
+    """
+
+    __tablename__ = "inventory_txn"
+
+    id: int | None = Field(default=None, primary_key=True)
+    ts: NaiveDatetime = Field(index=True)
+    location_id: int = Field(foreign_key="location.id", index=True)
+    sku_id: int = Field(foreign_key="sku.id", index=True)
+    lpn: str | None = None
+    qty_change: int
+    type: TxnType = Field(index=True)
+    user: str
+    reason: str = ""  # free text; blank when nobody gave one
+    ref: str | None = None  # what caused it, e.g. "pick_task:812"
+
+
+class ShelfVariance(SQLModel, table=True):
+    """Hidden truth for the cycle count simulation: what's physically there minus the system.
+
+    Only the simulation and the evals read this. No tool, prompt or API response exposes it.
+    ``transient`` rows are counting artefacts (a count in cases, a pick in progress) that a
+    recount would not repeat.
+    """
+
+    __tablename__ = "shelf_variance"
+
+    id: int | None = Field(default=None, primary_key=True)
+    location_id: int = Field(foreign_key="location.id", index=True)
+    sku_id: int = Field(foreign_key="sku.id")
+    lpn: str | None = None
+    delta: int
+    scenario: str
+    transient: bool = False

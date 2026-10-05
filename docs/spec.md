@@ -1,4 +1,4 @@
-# Warehouse Ops Agent: Spec (v0.2)
+# Warehouse Ops Agent: Spec (v0.3)
 
 ## Business
 
@@ -25,6 +25,7 @@ and the agent answers from live data, then proposes replenishment moves that the
 
 - **Shift supervisor** (primary): chats with the agent, approves replenishment tasks.
 - **Replenishment driver** (secondary, implied): receives the approved tasks.
+- **Inventory clerk**: cycle counts locations and logs what they find.
 
 ## Core concepts
 
@@ -117,6 +118,96 @@ slot is freed), and the task becomes DONE. It never touches PROPOSED tasks, so a
 approves first. If the source pallet no longer holds the quantity it raises a rule violation
 (the endpoint answers 409 and the front end switches the simulation off). The endpoint is
 serialized with a lock so two overlapping ticks can't finish the same task twice.
+
+## Cycle Count Investigator
+
+**Problem.** Stock drifts away from what the system says: a manual adjustment with a blank
+reason, a pallet put away one slot over, a count done in cases instead of eaches. A clerk who
+cycle counts a location logs the number and moves on; nobody has time to dig into every
+mismatch. When a count doesn't match, a **discrepancy** opens and an AI investigator works out
+what most likely happened from the inventory history, with the evidence for each explanation.
+The investigator only explains and suggests; a supervisor decides.
+
+### New tables
+
+- **inventory_txn** (the ledger): id, ts, location_id, sku_id, lpn (nullable), qty_change (signed),
+  type (`OPENING` / `RECEIVE` / `PICK` / `REPLEN_OUT` / `REPLEN_IN` / `ADJUSTMENT` / `COUNT_ADJUSTMENT`),
+  user, reason (may be blank, as in real life), ref (e.g. `pick_task:812`, `replenishment_task:7`).
+  **Invariant:** for every location and SKU, the sum of `qty_change` equals the `inventory` qty.
+  Every service that changes stock writes its ledger rows in the same transaction.
+- **shelf_variance** (hidden truth for the simulation): location_id, sku_id, lpn, delta, scenario.
+  What is physically on the shelf minus what the system says. Only the cycle count simulation
+  and the evals read it; no tool, prompt or API response exposes it.
+- **cycle_count**: id, location_id, sku_id, lpn, counted_by, counted_at, system_qty, counted_qty,
+  variance, status (`MATCHED` / `DISCREPANCY` / `RECOUNT_REQUESTED` / `ACCEPTED`),
+  resolved_by, resolved_at, resolution_reason.
+- **investigation**: id, cycle_count_id, model, status (`RUNNING` / `DONE` / `FAILED`), summary,
+  causes (JSON list of {cause, likelihood, evidence[]}), next_steps (JSON list), created_at, tool_calls.
+
+### Seed: history and planted scenarios
+
+The seed writes a ledger for the 3-day window that explains every current quantity: an `OPENING`
+row per stock record, `PICK` rows for completed picks, `REPLEN_OUT`/`REPLEN_IN` for done
+replenishments, `RECEIVE` rows for recent pallets, and a sprinkle of ordinary `ADJUSTMENT` rows
+with sensible reasons ("damaged in handling", "found during putaway") as background noise.
+Staff names are seeded for clerks and supervisors so every row has a user.
+
+Six planted scenarios, each with a true cause the investigator should find:
+
+| Scenario | What the count finds | Evidence in the data |
+|---|---|---|
+| `blank_adjustment` | Pick face short by N | An `ADJUSTMENT` of +N with a blank reason by one user, likely keyed against the wrong location |
+| `mis_slot` | A reserve slot is missing its whole pallet; a nearby empty slot holds a pallet | Same LPN and qty; the pallet was put away one slot over |
+| `case_vs_each` | A reserve pallet counted at qty ÷ case_qty | Variance is exactly qty − qty/case_qty; the counted number × case_qty matches the system |
+| `short_replen` | Pick face short by N, its source pallet over by N | A `DONE` replenishment of Q from that pallet; the crew moved Q − N |
+| `mid_pick_count` | Pick face short by the qty of an open pick | An `OPEN` pick task at the face for exactly that qty; a recount after the pick matches |
+| `unexplained_shrink` | Pick face short by a few units | Nothing; the honest answer is "no evidence, likely damage or theft; recount and check the damage bin" |
+
+### Simulating a cycle count
+
+A **Simulate cycle count** button (`POST /api/simulation/cycle-count`) counts about 30 locations:
+every planted location plus a random sample of others, as a clerk would on a normal shift. Each
+counted qty is the system qty plus that location's `shelf_variance` (zero for most), so most
+counts match and 6–7 open as discrepancies. Locations with a `RECOUNT_REQUESTED` count are
+included again; a recount of `mid_pick_count` after the pick is confirmed matches.
+
+### Investigation
+
+Every new discrepancy is investigated automatically in the background, on a low-cost model
+(`claude-sonnet-5-5` by default, configurable). The investigator gets read-only tools:
+
+| Tool | Returns |
+|---|---|
+| `list_discrepancies` | open discrepancies with location, SKU, system vs counted, variance |
+| `get_inventory_history` | ledger rows for a location and/or SKU over a time window |
+| `find_stock` | (existing) every location holding a SKU |
+| `get_nearby_stock` | stock and recent counts in the neighbouring bays and slots |
+| `list_open_picks` | open pick tasks at a location |
+
+It returns a summary, likely causes ranked with evidence that cites ledger rows, and next steps
+(recount, check a named location, ask a named user). The same tools are available to the chat,
+so a supervisor can ask "why is A-03-04-1 off?".
+
+### Resolving a discrepancy (human only)
+
+- **Accept**: writes a `COUNT_ADJUSTMENT` so the system matches the count. A reason is required,
+  so the system never gets another blank one.
+- **Recount**: sets `RECOUNT_REQUESTED`; the next simulated count includes the location again.
+
+Like approval, resolving is never an agent or MCP tool.
+
+### UI
+
+- **Cycle counts** page next to Tasks: open discrepancies first, each with system vs counted,
+  the investigation (summary, causes with evidence, next steps), and Accept / Recount buttons.
+- Floor map: bays with an open discrepancy get a marker.
+- Activity feed: counts logged, discrepancies opened, investigations finished, resolutions.
+
+### Delivery
+
+1. Ledger, staff, seeded history and planted scenarios (+ the crew simulation writes ledger rows)
+2. Cycle counts, discrepancies, the simulate button and the Cycle counts page with Accept / Recount
+3. Investigator: read-only tools, background investigation, results on the page and in the chat
 
 ## Build order
 

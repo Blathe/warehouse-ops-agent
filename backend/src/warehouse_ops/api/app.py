@@ -115,7 +115,7 @@ def create_app(
         """
         with simulation_lock, Session(engine) as session:
             try:
-                completed = replenishment_tasks.complete_next_replenishment_task(session)
+                completed = replenishment_tasks.complete_next_replenishment_task(session, now())
             except RuleViolationError as exc:
                 raise HTTPException(409, str(exc)) from exc
             session.commit()
