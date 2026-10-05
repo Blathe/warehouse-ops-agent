@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, col, select
 
 from warehouse_ops.db.models import (
+    CycleCount,
     Inventory,
     Location,
     LocationType,
@@ -18,6 +19,7 @@ from warehouse_ops.db.models import (
     ReplenishmentTask,
     Sku,
 )
+from warehouse_ops.services.cycle_counts import OPEN_STATUSES as OPEN_COUNT_STATUSES
 from warehouse_ops.services.replenishment import OPEN_REPLENISHMENT_STATUSES
 
 PickStatus = Literal["ok", "low", "empty", "unassigned"]
@@ -50,6 +52,7 @@ class Bay(BaseModel):
     y: int
     pick: PickSlot
     reserve: list[ReserveSlot]  # lowest level first
+    open_discrepancies: list[str] = []  # location codes in this bay with an open count
 
 
 class StagingLane(BaseModel):
@@ -86,6 +89,13 @@ def get_floor_map(session: Session) -> FloorMap:
         )
     }
 
+    open_counts = {
+        count.location_id
+        for count in session.exec(
+            select(CycleCount).where(col(CycleCount.status).in_(OPEN_COUNT_STATUSES))
+        )
+    }
+
     bays: dict[tuple[str, int, int], Bay] = {}
     staging = []
     counts: dict[PickStatus, int] = {"ok": 0, "low": 0, "empty": 0, "unassigned": 0}
@@ -94,7 +104,8 @@ def get_floor_map(session: Session) -> FloorMap:
         key = (loc.zone, loc.aisle, loc.bay)
         if loc.type == LocationType.STAGING:
             staging.append(StagingLane(location=loc.code, x=loc.x, y=loc.y))
-        elif loc.type == LocationType.PICK:
+            continue
+        if loc.type == LocationType.PICK:
             pick = _pick_slot(loc, faces.get(loc.id), stock[loc.id], skus, open_tasks)
             counts[pick.status] += 1
             bays[key] = Bay(
@@ -113,6 +124,8 @@ def get_floor_map(session: Session) -> FloorMap:
                     qty=pallet.qty if pallet else 0,
                 )
             )
+        if loc.id in open_counts:
+            bays[key].open_discrepancies.append(loc.code)
 
     return FloorMap(bays=list(bays.values()), staging=staging, counts=counts)
 

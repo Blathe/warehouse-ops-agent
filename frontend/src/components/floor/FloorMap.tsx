@@ -75,6 +75,12 @@ export function FloorMap({ refreshKey = 0, highlight = [], selected, onSelect }:
             <span className="size-3 rounded-sm outline-2 outline-offset-1 outline-violet-500" />
             Agent is working here
           </li>
+          <li className="flex items-center gap-1.5">
+            <span className="relative size-3 rounded-sm bg-muted">
+              <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-orange-500" />
+            </span>
+            Open count discrepancy
+          </li>
         </ul>
         <Button variant="outline" size="sm" onClick={load}>
           <RefreshCwIcon />
@@ -147,6 +153,9 @@ function BayCell({
     STATUS_STYLES[pick.status].label,
     pick.sku_code ? `SKU ${pick.sku_code}, ${pick.on_hand} on hand` : null,
     pick.open_task_id ? `open task #${pick.open_task_id}` : null,
+    bay.open_discrepancies.length > 0
+      ? `count discrepancy at ${bay.open_discrepancies.join(' and ')}`
+      : null,
   ]
     .filter(Boolean)
     .join(', ')
@@ -158,12 +167,19 @@ function BayCell({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        'aspect-square w-full rounded-sm transition-transform hover:scale-125 focus-visible:outline-2 focus-visible:outline-ring',
+        'relative aspect-square w-full rounded-sm transition-transform hover:scale-125 focus-visible:outline-2 focus-visible:outline-ring',
         STATUS_STYLES[pick.status].cell,
         pick.open_task_id && 'ring-2 ring-blue-500 ring-inset',
         highlighted && 'animate-pulse outline-2 outline-offset-1 outline-violet-500',
         selected && 'scale-125 outline-2 outline-foreground',
       )}
-    />
+    >
+      {bay.open_discrepancies.length > 0 && (
+        <span
+          aria-hidden
+          className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-orange-500 ring-1 ring-background"
+        />
+      )}
+    </button>
   )
 }

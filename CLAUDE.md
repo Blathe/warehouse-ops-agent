@@ -81,6 +81,9 @@ npm test && npm run lint && npm run typecheck
 - **Finishing a task is simulator-only**: moving an APPROVED task to DONE (and the stock with it) happens
   only through `POST /api/simulation/tick` (`complete_next_replenishment_task`), never as an MCP or agent
   tool. `tests/agent/test_tools.py` fails if a tool that decides or completes tasks is added.
+- **Resolving a count is human-only**: accepting a discrepancy (adjusting the system, with a required
+  reason) or requesting a recount happens only through the API's `/api/cycle-counts/{id}/...`
+  endpoints, never as an MCP or agent tool.
 - **Every stock change writes the ledger**: any service that changes `inventory` also writes
   `inventory_txn` rows in the same transaction, so the ledger always sums to the stock
   (`tests/db/test_history.py` has the check).

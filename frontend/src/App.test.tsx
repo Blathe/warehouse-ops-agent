@@ -34,6 +34,7 @@ const floorMap = {
       open_task_id: null,
     },
     reserve: [],
+    open_discrepancies: [],
   })),
   staging: [],
   counts: { ok: 0, low: 0, empty: 2, unassigned: 0 },
@@ -66,6 +67,7 @@ const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
   if (url === '/api/models') return json(models)
   if (url === '/api/floor-map') return json(floorMap)
   if (url.startsWith('/api/tasks')) return json(activeTasks)
+  if (url.startsWith('/api/cycle-counts')) return json([])
   if (url === '/api/simulation/tick') {
     const next = tickReplies.shift()
     return next instanceof Response ? next : json(next ?? { completed: null })

@@ -10,12 +10,21 @@ import {
   type ActivityItem,
 } from '@/components/activity/activity'
 import { Chat } from '@/components/chat/Chat'
+import { CycleCountsPage, type CountEvent } from '@/components/counts/CycleCountsPage'
+import { formatVariance } from '@/components/counts/status'
 import { FloorMap } from '@/components/floor/FloorMap'
 import { ModelPicker } from '@/components/ModelPicker'
 import { TasksPage } from '@/components/tasks/TasksPage'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getModels, getTasks, tickSimulation, type AgentTurn, type ModelOption } from '@/lib/api'
+import {
+  getCycleCounts,
+  getModels,
+  getTasks,
+  tickSimulation,
+  type AgentTurn,
+  type ModelOption,
+} from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const NAME_KEY = 'warehouse-ops.supervisor'
@@ -43,13 +52,14 @@ export default function App() {
   const [supervisor, setSupervisor] = useState(() => load(NAME_KEY) || 'Supervisor')
   const [models, setModels] = useState<ModelOption[]>([])
   const [model, setModel] = useState<string | null>(null)
-  const [page, setPage] = useState<'workspace' | 'tasks'>('workspace')
+  const [page, setPage] = useState<'workspace' | 'tasks' | 'counts'>('workspace')
   const [view, setView] = useState<'chat' | 'map'>('chat') // only used on narrow screens
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [highlight, setHighlight] = useState<string[]>([])
   const [selectedBay, setSelectedBay] = useState<string | null>(null)
   const [mapVersion, setMapVersion] = useState(0)
   const [activeTasks, setActiveTasks] = useState<number | null>(null)
+  const [openCounts, setOpenCounts] = useState<number | null>(null)
   const [simulating, setSimulating] = useState(false)
 
   // useEffect runs after the first render; the empty [] means "only once", like an
@@ -72,6 +82,9 @@ export default function App() {
     getTasks('active')
       .then((tasks) => setActiveTasks(tasks.length))
       .catch(() => setActiveTasks(null))
+    getCycleCounts('open')
+      .then((counts) => setOpenCounts(counts.filter((c) => c.status === 'DISCREPANCY').length))
+      .catch(() => setOpenCounts(null))
   }, [mapVersion])
 
   // Simulated floor crew: while it is on, ask the backend to finish the oldest approved task
@@ -109,6 +122,27 @@ export default function App() {
     setSelectedBay(location)
     setView('map')
     setPage('workspace')
+  }
+
+  // From the Cycle counts page: log it and refresh the map, whose bays show open counts.
+  function handleCountEvent(event: CountEvent) {
+    const note =
+      event.kind === 'counted'
+        ? activityNote(
+            'Cycle count finished',
+            `${event.run.counted} locations counted, ${event.run.discrepancies.length} discrepancies opened`,
+            event.run.discrepancies.length > 0 ? 'warning' : 'success',
+          )
+        : activityNote(
+            event.kind === 'accepted'
+              ? `Count accepted at ${event.count.location}`
+              : `Recount requested at ${event.count.location}`,
+            `${formatVariance(event.count.variance)} × SKU ${event.count.sku_code}` +
+              (event.count.resolution_reason ? `: ${event.count.resolution_reason}` : ''),
+            event.kind === 'accepted' ? 'success' : 'info',
+          )
+    setActivity((current) => [...current, note])
+    setMapVersion((version) => version + 1)
   }
 
   function changeModel(id: string) {
@@ -157,6 +191,22 @@ export default function App() {
                 className="ml-1 rounded-full bg-blue-600 px-1.5 text-[11px] leading-4 text-white"
               >
                 {activeTasks}
+              </span>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant={page === 'counts' ? 'secondary' : 'ghost'}
+            aria-pressed={page === 'counts'}
+            onClick={() => setPage('counts')}
+          >
+            Cycle counts
+            {openCounts !== null && openCounts > 0 && (
+              <span
+                aria-label={`${openCounts} open`}
+                className="ml-1 rounded-full bg-orange-500 px-1.5 text-[11px] leading-4 text-white"
+              >
+                {openCounts}
               </span>
             )}
           </Button>
@@ -271,6 +321,16 @@ export default function App() {
       {page === 'tasks' && (
         <main className="min-h-0 flex-1 overflow-y-auto p-4">
           <TasksPage onShowOnMap={showOnMap} refreshKey={mapVersion} />
+        </main>
+      )}
+      {page === 'counts' && (
+        <main className="min-h-0 flex-1 overflow-y-auto p-4">
+          <CycleCountsPage
+            supervisor={supervisor.trim() || 'Supervisor'}
+            onShowOnMap={showOnMap}
+            onChange={handleCountEvent}
+            refreshKey={mapVersion}
+          />
         </main>
       )}
     </div>
