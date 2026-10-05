@@ -1,8 +1,9 @@
 # Warehouse Ops Agent
 
-A Claude-powered agent that helps a warehouse shift supervisor deal with **short picks and replenishment**, in plain English, over a realistic database for a fishing tackle distribution center.
+A Claude-powered assistant for a warehouse shift supervisor, built over a realistic database for a fishing tackle distribution center. It does two jobs:
 
-> "Any short picks in zone A since 6am?" → the agent queries live data, explains what happened, and proposes a replenishment move. A human approves it. The model never approves its own work.
+- **Short picks and replenishment.** "Any short picks in zone A since 6am?" The agent queries live data, explains what happened, and proposes a replenishment move. A person approves it; the model never approves its own work.
+- **Cycle Count Investigator.** When a cycle count doesn't match the system, an AI investigator digs through the inventory history and explains what most likely happened, with evidence, before a supervisor decides what to do.
 
 <!-- TODO: add a screenshot or GIF of the chat + floor map here (docs/demo.gif) -->
 
@@ -11,6 +12,8 @@ A Claude-powered agent that helps a warehouse shift supervisor deal with **short
 A picker goes to a pick face and finds fewer units than the task expects: a **short pick**. Usually the stock is sitting on a pallet in reserve, and the pick face just wasn't refilled in time. Supervisors find out late and piece the picture together from several screens.
 
 This agent lets a supervisor ask what's short, find where the stock is, and queue the fix from one chat.
+
+The second problem is **inventory that drifts** from what the system says: a manual adjustment entered with a blank reason, a pallet put away one slot over, a pallet counted in cases instead of units. A clerk who cycle counts a location logs the number and moves on; nobody has time to investigate every mismatch, so the same errors keep coming back. The Cycle Count Investigator does that legwork for every mismatch, automatically.
 
 ## What it does
 
@@ -22,6 +25,15 @@ This agent lets a supervisor ask what's short, find where the stock is, and queu
 - **Simulated floor crew.** A header toggle (off by default) finishes one approved task every 5 seconds, oldest first, and moves the stock for real, so the map and task count change live as the warehouse "works". The agent can't do this: completing a task is not a tool.
 - **Switchable models.** Chat with Claude Opus 5.5, Sonnet 5.5, or Haiku 4.5 from the UI.
 - **Also works as an MCP server**, so the same tools can be used from Claude Desktop ([setup](docs/claude-desktop.md)).
+- **Two-column workspace.** Chat on the left; the floor map and an activity feed of everything the agent did on the right. After each reply the map reloads and highlights the bays the agent is working on. A **Tasks** page lists every replenishment task.
+
+### Cycle Count Investigator
+
+- **An inventory ledger.** Every stock change (receipts, picks, replenishment moves, manual adjustments) is recorded with who did it, when, the reason and what caused it. The ledger always sums to the current stock, and a test enforces it.
+- **Simulate a cycle count.** One click counts about 30 locations the way a clerk would on a shift. Six problems are planted in the seed data, each with a known cause, so most counts match and 8 discrepancies open.
+- **Automatic AI investigation.** Each discrepancy is investigated in the background by a separate, lower-cost model with read-only tools: inventory history with running balances, nearby slots, unconfirmed picks, and the other open discrepancies. It returns a summary, likely causes ranked with evidence (for example, "+30 adjustment by Michael Mcguire, May 30, no reason given"), and next steps.
+- **People decide.** Accepting a count (which adjusts the system and requires a reason) or requesting a recount is a supervisor's click, never a tool. On a recount, counting mistakes and picks that were in progress clear up; real losses show up again.
+- **The chat can investigate too:** "why is A-02-23-1 off?" uses the same read-only tools. The hidden ground truth is only ever read by the simulation and the evals, never by a model.
 
 ## Architecture
 
@@ -30,6 +42,8 @@ React chat + floor map  ──HTTP──▶  FastAPI  ──▶  Agent loop (Ant
                                                        │
                                                        ▼
         MCP server (stdio)  ───────────────▶  services/  (business logic + validation)
+                                                       ▲
+  Cycle count ──▶ discrepancies ──▶ Investigator (background, read-only tools)
                                                        │
                                                        ▼
                                           SQLModel / SQLite (Postgres-ready)
@@ -67,7 +81,7 @@ npm install
 npm run dev                   # http://localhost:5173
 ```
 
-Try: *"Any short picks in zone A today?"*, *"Which pick faces need replenishing, and where's the stock?"*, *"Where is SKU <code> stocked?"*
+Try: *"Any short picks in zone A today?"*, *"Which pick faces need replenishing, and where's the stock?"*, *"Where is SKU <code> stocked?"* Then open **Cycle counts**, click **Simulate cycle count**, and watch the investigations come in.
 
 The seed data is deterministic (fixed random seed), and some pick faces are deliberately planted below minimum so there is always something real to find.
 
@@ -91,7 +105,7 @@ Unit tests cover the services; the evals measure the *agent*: does Claude pick t
 
 ```bash
 cd backend
-uv run python -m warehouse_ops.evals --model claude-haiku-4-5   # calls the Claude API and costs money
+uv run run-evals --model claude-haiku-4-5   # calls the Claude API and costs money
 ```
 
 Results from one run per model (2026-10-02):
@@ -107,16 +121,37 @@ Results from one run per model (2026-10-02):
 - **The evals found a real bug.** On Haiku, an early run proposed a duplicate replenishment task because `find_stock` didn't show that one was already open. The service rules would have refused it, but the proposal was wasted. Adding `open_task_id` to `find_stock` fixed it (tool selection 93% to 100%).
 - **Caveats:** one run per case, so results vary run to run. Answer checks are keyword-based, so a correct answer with unexpected wording can score as a miss; an LLM judge is the planned fix.
 
+### Investigator evals
+
+A second suite checks whether the investigator finds the **true cause** of each planted discrepancy. There are 8 cases, one per discrepancy, each scored on the top-ranked cause, whether the right cause is in the top 3, the evidence cited (such as the adjusting user, or the neighbouring slot of a misplaced pallet), the tools used, and the next steps. For the one problem the data can't explain, the right answer is to say so rather than invent a cause.
+
+```bash
+uv run run-evals --suite investigator --model claude-haiku-4-5
+uv run run-evals --suite investigator --rescore evals/results/<report>.json   # regrade, no API calls
+```
+
+Results from one run per model (2026-10-04):
+
+| Investigator model | Correct root cause | Evidence cited | Right tools | Cost (8 investigations) | Mean latency |
+|---|---|---|---|---|---|
+| Claude Haiku 4.5 | 7 / 8 | 100% | 100% | $0.16 | 13 s |
+| Claude Opus 5.5 | 8 / 8 | 100% | 100% | $0.94 | 14 s |
+
+- **Haiku is the value pick:** about 2¢ per investigation versus 12¢. Its one miss was a pallet counted in cases instead of units: it guessed that stock had been removed, and its arithmetic was wrong. Opus spotted the miscount and suggested checking the same clerk's other counts.
+- **The evals caught mistakes in the eval itself.** The first run showed that one planted problem had an accidental red herring (an unconfirmed pick of 11 next to a shortage of 12), so I fixed the seed. Later runs showed the keyword checks failing correct answers ("refill" instead of "replenishment"), so I broadened them and added `--rescore` to regrade saved reports for free. An LLM judge is the next step to make the scoring sturdier.
+
 ## Project layout
 
 ```
 backend/src/warehouse_ops/
-  db/           SQLModel tables, engine, seed / fake-data generator
-  services/     business logic: queries and validation
+  db/           SQLModel tables, engine, seed / fake-data generator, seeded history and planted scenarios
+  services/     business logic: queries, validation, cycle counts, the inventory ledger
   mcp_server/   MCP tool wrappers around services/
-  agent/        Claude agent loop, approval flow, model options
+  agent/        Claude agent loop, approval flow, model options, cycle count investigator
   api/          FastAPI app for the front end
-frontend/       React app: chat, approval cards, tool traces, floor map
+  evals/        eval runner and scoring for both suites
+backend/evals/  eval cases (cases.yaml, investigations.yaml) and run reports
+frontend/       React app: chat, approval cards, tool traces, floor map, Tasks and Cycle counts pages
 docs/           product spec and Claude Desktop setup
 ```
 
@@ -124,10 +159,11 @@ The full product spec (data model, tools, rules, agent behavior) is in [docs/spe
 
 ## Status and roadmap
 
-Working today: schema and seed data, services, MCP server, agent loop with approval and logging, FastAPI API, chat UI, floor map, eval runner.
+Working today: schema and seed data, services, MCP server, agent loop with approval and logging, FastAPI API, chat UI, floor map, crew simulation, Cycle Count Investigator, and both eval suites.
 
 Next:
 - [x] Eval set and runner (tool-selection, argument, and answer accuracy, plus cost and latency)
+- [x] Cycle Count Investigator with its own eval suite
 - [ ] Claude-as-judge scoring and repeat runs, to reduce keyword brittleness and run-to-run noise
 - [ ] More eval cases (30 to 50 planned)
 - [ ] Deployment with Postgres
