@@ -9,17 +9,21 @@ import pytest
 from sqlmodel import Session, select
 
 from tests.conftest import AS_OF
+from tests.db.test_history import ledger_matches_inventory
 from warehouse_ops.db.models import (
     Inventory,
+    InventoryTxn,
     Location,
     LocationType,
     ReplenishmentStatus,
     ReplenishmentTask,
+    TxnType,
 )
 from warehouse_ops.services.errors import NotFoundError, RuleViolationError
 from warehouse_ops.services.inventory import find_stock
 from warehouse_ops.services.replenishment import list_replenishment_needs
 from warehouse_ops.services.replenishment_tasks import (
+    CREW,
     complete_next_replenishment_task,
     create_replenishment_task,
     decide_replenishment_task,
@@ -329,3 +333,23 @@ def test_a_pallet_that_cannot_cover_the_task_is_an_error(session: Session) -> No
     with pytest.raises(RuleViolationError, match="no longer holds"):
         complete_next_replenishment_task(session)
     assert get_replenishment_task(session, task.id or 0).status == ReplenishmentStatus.APPROVED
+
+
+def test_completing_a_task_writes_both_moves_to_the_ledger(session: Session) -> None:
+    _drain(session)
+    task = _approved(session)
+
+    done = complete_next_replenishment_task(session, AS_OF)
+
+    assert done is not None
+    moves = session.exec(
+        select(InventoryTxn).where(InventoryTxn.ref == f"replenishment_task:{task.id}")
+    ).all()
+    assert sorted((m.type, m.location_id, m.qty_change) for m in moves) == sorted(
+        [
+            (TxnType.REPLEN_OUT, task.from_location_id, -task.qty),
+            (TxnType.REPLEN_IN, task.to_location_id, task.qty),
+        ]
+    )
+    assert all(m.ts == AS_OF and m.user == CREW for m in moves)
+    assert ledger_matches_inventory(session)  # the ledger still explains every quantity

@@ -11,6 +11,7 @@ What gets planted on purpose, so the tools always have something to find:
 - some of those SKUs have no reserve stock at all (a true stockout)
 - two open (APPROVED) replenishment tasks for below-min faces
 - a few older orders that are still not shipped past their ship-by time (late orders)
+- an inventory ledger explaining every quantity, plus six cycle count scenarios (db/history.py)
 """
 
 import argparse
@@ -26,6 +27,7 @@ from sqlmodel import Session
 
 from warehouse_ops.db.catalog import CATEGORIES, ZONES, generate_catalog
 from warehouse_ops.db.engine import get_engine, reset_db
+from warehouse_ops.db.history import seed_history
 from warehouse_ops.db.models import (
     Inventory,
     Location,
@@ -84,6 +86,8 @@ class SeedSummary:
     stockouts: int
     late_orders: int
     replenishment_tasks: int
+    ledger_rows: int
+    planted_discrepancies: int  # shelf variance rows (a mis-slot plants two)
 
 
 class _HasId(Protocol):
@@ -123,6 +127,8 @@ def seed_database(
         replen = _create_replenishment_tasks(
             session, rng, fake, skus, faces, pallets, problem_sku_ids, stockout_ids, as_of
         )
+        # Last, with its own random generators, so everything above is unchanged by it.
+        history = seed_history(session, seed=seed, as_of=as_of)
         session.commit()
 
         return SeedSummary(
@@ -138,6 +144,8 @@ def seed_database(
             stockouts=len(stockout_ids),
             late_orders=sum(o.status != OrderStatus.SHIPPED and o.ship_by < as_of for o in orders),
             replenishment_tasks=len(replen),
+            ledger_rows=history.ledger_rows,
+            planted_discrepancies=sum(len(v) for v in history.scenarios.values()),
         )
 
 

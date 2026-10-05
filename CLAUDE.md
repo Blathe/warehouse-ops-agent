@@ -81,6 +81,11 @@ npm test && npm run lint && npm run typecheck
 - **Finishing a task is simulator-only**: moving an APPROVED task to DONE (and the stock with it) happens
   only through `POST /api/simulation/tick` (`complete_next_replenishment_task`), never as an MCP or agent
   tool. `tests/agent/test_tools.py` fails if a tool that decides or completes tasks is added.
+- **Every stock change writes the ledger**: any service that changes `inventory` also writes
+  `inventory_txn` rows in the same transaction, so the ledger always sums to the stock
+  (`tests/db/test_history.py` has the check).
+- **`shelf_variance` is hidden truth**: only the cycle count simulation and the evals read it;
+  never expose it through a tool, prompt or API response.
 - **Log every tool call** (tool, args, result summary, duration, approval decision) to the `tool_call_log` table.
 - **Seeded fake data is deterministic** (fixed random seed) so tests and evals are reproducible.
 - **Secrets** come from `.env` (see `.env.example`); never commit keys.
