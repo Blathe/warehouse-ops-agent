@@ -1,0 +1,15 @@
+.git/
+.env
+.env.*
+.claude/
+docs/
+**/.venv/
+**/node_modules/
+**/dist/
+**/__pycache__/
+**/.mypy_cache/
+**/.pytest_cache/
+**/.ruff_cache/
+**/*.db
+backend/tests/
+backend/evals/results/

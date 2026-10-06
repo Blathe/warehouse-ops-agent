@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import anthropic
 import httpx2
 import pytest
@@ -282,3 +284,19 @@ def test_investigate_again(engine: Engine) -> None:
     again = api.post(f"/api/cycle-counts/{count_id}/investigate")
     assert again.status_code == 200 and again.json()["investigation"]["status"] == "RUNNING"
     assert api.post("/api/cycle-counts/999999/investigate").status_code == 404
+
+
+def test_serves_front_end_with_spa_fallback(engine: Engine, tmp_path: Path) -> None:
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("<div id=root></div>")
+    (tmp_path / "assets" / "app.js").write_text("console.log(1)")
+    app = create_app(
+        engine=engine, client=FakeClient().as_anthropic(), now=lambda: AS_OF, static_dir=tmp_path
+    )
+    web = TestClient(app)
+
+    assert web.get("/assets/app.js").text == "console.log(1)"
+    assert web.get("/cycle-counts").text == "<div id=root></div>"  # client-side route
+    assert web.get("/../../etc/passwd").text == "<div id=root></div>"  # no escaping the folder
+    assert web.get("/api/health").json() == {"status": "ok"}  # API routes win
+    assert web.get("/api/nope").status_code == 404  # and unknown ones aren't index.html
