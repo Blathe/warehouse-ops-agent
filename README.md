@@ -83,6 +83,24 @@ npm run dev                   # http://localhost:5173
 
 Try: *"Any short picks in zone A today?"*, *"Which pick faces need replenishing, and where's the stock?"*, *"Where is SKU <code> stocked?"* Then open **Cycle counts**, click **Simulate cycle count**, and watch the investigations come in.
 
+### Docker (whole app)
+
+If you'd rather not install Python and Node, you only need [Docker](https://www.docker.com/) and an `.env` with your `ANTHROPIC_API_KEY`. From the repo root:
+
+```bash
+docker build -t warehouse-ops .
+docker run --rm -p 8000:8000 --env-file .env warehouse-ops
+```
+
+Then open http://localhost:8000. Stop it with Ctrl+C.
+
+- **One container runs everything.** A Node stage builds the React app, and FastAPI serves it next to the API, so there is no Vite dev server and no proxy.
+- **It resets on every start.** The image seeds a fresh SQLite database at build time (`--as-of 2026-06-01T13:00`, with `WAREHOUSE_AS_OF` pinned to match), so each container starts from the same warehouse. Approved tasks and chat history are gone after a restart.
+- **Port 8000 busy?** Map another host port, e.g. `-p 8001:8000`, and open http://localhost:8001.
+- **No key?** Leave off `--env-file`. The app still loads and the data pages work; only chat and investigations need the key.
+- **The API key is never baked into the image.** `.env` is excluded by `.dockerignore` and passed at run time.
+- **Not for the public internet yet.** There is no auth or spend cap, so don't expose it with a real key.
+
 The seed data is deterministic (fixed random seed), and some pick faces are deliberately planted below minimum so there is always something real to find.
 
 ## Tests and quality
@@ -153,6 +171,7 @@ backend/src/warehouse_ops/
 backend/evals/  eval cases (cases.yaml, investigations.yaml) and run reports
 frontend/       React app: chat, approval cards, tool traces, floor map, Tasks and Cycle counts pages
 docs/           product spec and Claude Desktop setup
+Dockerfile      one image for the React app, API and agent (SQLite)
 ```
 
 The full product spec (data model, tools, rules, agent behavior) is in [docs/spec.md](docs/spec.md).
@@ -166,7 +185,8 @@ Next:
 - [x] Cycle Count Investigator with its own eval suite
 - [ ] Claude-as-judge scoring and repeat runs, to reduce keyword brittleness and run-to-run noise
 - [ ] More eval cases (30 to 50 planned)
-- [ ] Deployment with Postgres
+- [x] Dockerfile: the whole app in one container on SQLite
+- [ ] Hosted deployment with Postgres, auth and a spend cap
 - [ ] Write-up on design decisions
 
 ## Why I built this

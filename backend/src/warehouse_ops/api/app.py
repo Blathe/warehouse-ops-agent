@@ -6,8 +6,10 @@ Conversations live in memory for now, so they are lost on restart and the API
 must run as a single process.
 """
 
+import os
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from random import Random
 from threading import Lock
 from typing import Literal
@@ -16,6 +18,7 @@ import anthropic
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine
 from sqlmodel import Session
@@ -87,8 +90,13 @@ def create_app(
     client: anthropic.Anthropic | None = None,
     now: Callable[[], datetime] = clock.now,
     investigation_workers: int = 4,
+    static_dir: Path | None = None,
 ) -> FastAPI:
-    """Build the app; tests pass an in-memory engine and a fake Claude client."""
+    """Build the app; tests pass an in-memory engine and a fake Claude client.
+
+    ``static_dir`` is the built front end (``frontend/dist``). When given, the app serves it
+    too, so one process (one container) is the whole product.
+    """
     app = FastAPI(title="Warehouse Ops Agent")
     engine = engine or get_engine()
     client = client or anthropic.Anthropic()
@@ -242,9 +250,29 @@ def create_app(
                 )
             )
 
+    if static_dir is not None:
+        mount_front_end(app, static_dir)
+
     return app
+
+
+def mount_front_end(app: FastAPI, static_dir: Path) -> None:
+    """Serve the built React app, falling back to index.html so page URLs survive a refresh."""
+    root = static_dir.resolve()
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def front_end(path: str) -> FileResponse:
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(404, "Not found")  # unknown API routes must not return HTML
+        file = (root / path).resolve()
+        if file.is_file() and file.is_relative_to(root):
+            return FileResponse(file)
+        return FileResponse(root / "index.html")
 
 
 def main() -> None:
     load_dotenv(BACKEND_DIR.parent / ".env")  # ANTHROPIC_API_KEY, DATABASE_URL, WAREHOUSE_AS_OF
-    uvicorn.run(create_app(), host="127.0.0.1", port=8000)
+    # A container must bind 0.0.0.0 to be reachable; locally the default stays loopback-only.
+    host = os.environ.get("WAREHOUSE_API_HOST", "127.0.0.1")
+    static = os.environ.get("WAREHOUSE_STATIC_DIR")  # set in the Docker image
+    uvicorn.run(create_app(static_dir=Path(static) if static else None), host=host, port=8000)
