@@ -227,3 +227,108 @@ export function requestRecount(id: number, decidedBy: string): Promise<CycleCoun
 export function investigateAgain(id: number): Promise<CycleCount> {
   return post(`/api/cycle-counts/${id}/investigate`, {})
 }
+
+// The agent log. These types mirror backend/src/warehouse_ops/services/agent_log.py.
+export type LogSource = 'CHAT' | 'INVESTIGATOR' | 'MCP'
+
+export interface ToolCallEntry {
+  id: number
+  ts: string
+  session_id: string
+  source: LogSource
+  tool: string
+  args: Record<string, unknown>
+  result_summary: string
+  duration_ms: number
+  approval: Approval
+  model_call_id: number | null
+  model: string | null
+  model_call_cost_usd: number | null // shared by every call from the same request
+}
+
+export interface ModelCallEntry {
+  id: number
+  ts: string
+  session_id: string
+  source: LogSource
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cost_usd: number
+  duration_ms: number
+  stop_reason: string | null
+}
+
+// One Claude request and the tool calls it asked for (model_call is null for MCP calls).
+export interface LogStep {
+  model_call: ModelCallEntry | null
+  tool_calls: ToolCallEntry[]
+}
+
+export interface CostBreakdown {
+  key: string
+  cost_usd: number
+  model_calls: number
+  tool_calls: number
+}
+
+export interface LogSummary {
+  total_cost_usd: number
+  model_calls: number
+  tool_calls: number
+  sessions: number
+  input_tokens: number
+  output_tokens: number
+  by_model: CostBreakdown[]
+  by_source: CostBreakdown[]
+}
+
+export interface SessionSummary {
+  session_id: string
+  source: LogSource
+  started_at: string
+  last_at: string
+  model_calls: number
+  tool_calls: number
+  cost_usd: number
+  rejected: number
+}
+
+export interface LogFilters {
+  source?: LogSource
+  since?: string // warehouse local time, e.g. 2026-06-01T00:00:00
+  until?: string
+}
+
+export interface CallFilters extends LogFilters {
+  tool?: string
+  approval?: Approval
+  before_id?: number // the last id of the previous page
+  limit?: number
+}
+
+// Builds ?a=1&b=2, skipping empty values.
+function query(params: object): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') search.set(key, String(value))
+  }
+  const text = search.toString()
+  return text ? `?${text}` : ''
+}
+
+export function getAgentLogSummary(filters: LogFilters = {}): Promise<LogSummary> {
+  return request(`/api/agent-log/summary${query(filters)}`)
+}
+
+export function getAgentSessions(filters: LogFilters = {}): Promise<SessionSummary[]> {
+  return request(`/api/agent-log/sessions${query(filters)}`)
+}
+
+export function getSessionSteps(sessionId: string): Promise<LogStep[]> {
+  return request(`/api/agent-log/sessions/${encodeURIComponent(sessionId)}`)
+}
+
+export function getAgentCalls(filters: CallFilters = {}): Promise<ToolCallEntry[]> {
+  return request(`/api/agent-log${query(filters)}`)
+}

@@ -10,6 +10,7 @@ import {
   locationsInTurn,
   type ActivityItem,
 } from '@/components/activity/activity'
+import { AgentLogPage } from '@/components/agentlog/AgentLogPage'
 import { Chat } from '@/components/chat/Chat'
 import { CycleCountsPage, type CountEvent } from '@/components/counts/CycleCountsPage'
 import { formatVariance } from '@/components/counts/status'
@@ -348,6 +349,14 @@ export default function App() {
                     onChange={handleCountEvent}
                     refreshKey={mapVersion}
                   />
+                </div>
+              }
+            />
+            <Route
+              path="/agent-log"
+              element={
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  <AgentLogPage refreshKey={mapVersion} />
                 </div>
               }
             />
