@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -158,6 +159,9 @@ def test_each_model_call_is_logged_with_cost_and_linked_to_its_tool_calls(
     calls = logs(engine)
     assert [c.model_call_id for c in calls] == [first.id, first.id]  # parallel calls share it
     assert all(c.source == LogSource.CHAT for c in calls)
+    # Log rows carry the real time, not the (here pinned) warehouse clock.
+    stamps = [first.ts, second.ts, *(c.ts for c in calls)]
+    assert all(abs(ts - datetime.now()) < timedelta(minutes=1) for ts in stamps)
 
 
 def test_approved_and_rejected_writes_link_to_the_model_call_that_asked(

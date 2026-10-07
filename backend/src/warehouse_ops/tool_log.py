@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import Engine
 from sqlmodel import Session
 
+from warehouse_ops import clock
 from warehouse_ops.agent.pricing import cost_usd
 from warehouse_ops.db.models import Approval, LogSource, ModelCallLog, ToolCallLog
 
@@ -31,7 +32,7 @@ def summarize(result: object) -> str:
 def record_model_call(
     engine: Engine,
     *,
-    ts: datetime,
+    ts: datetime | None = None,
     session_id: str,
     source: LogSource,
     model: str,
@@ -40,10 +41,13 @@ def record_model_call(
     duration_ms: int,
     stop_reason: str | None,
 ) -> int:
-    """Record one Claude request and its cost; returns the row id for tool calls to link to."""
+    """Record one Claude request and its cost; returns the row id for tool calls to link to.
+
+    ``ts`` defaults to the real time (see ``clock.wall_now``).
+    """
     with Session(engine) as session:
         row = ModelCallLog(
-            ts=ts,
+            ts=ts or clock.wall_now(),
             session_id=session_id,
             source=source,
             model=model,
@@ -62,7 +66,7 @@ def record_model_call(
 def record_tool_call(
     engine: Engine,
     *,
-    ts: datetime,
+    ts: datetime | None = None,
     session_id: str,
     tool: str,
     args: dict[str, Any],
@@ -75,7 +79,7 @@ def record_tool_call(
     with Session(engine) as session:
         session.add(
             ToolCallLog(
-                ts=ts,
+                ts=ts or clock.wall_now(),
                 session_id=session_id,
                 source=source,
                 model_call_id=model_call_id,

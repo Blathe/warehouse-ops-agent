@@ -66,7 +66,6 @@ def execute_tool_call(
 
     record_tool_call(
         engine,
-        ts=ctx.now,
         session_id=session_id,
         tool=call.name,
         args=args,

@@ -160,7 +160,6 @@ class Investigator:
                 )
                 model_call_id = record_model_call(
                     self._engine,
-                    ts=self._now(),
                     session_id=session_id,
                     source=LogSource.INVESTIGATOR,
                     model=self._model,

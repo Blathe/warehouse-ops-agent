@@ -75,7 +75,6 @@ def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MC
         finally:
             record_tool_call(
                 engine,
-                ts=now(),
                 session_id=session_id,
                 tool=tool,
                 args=args,

@@ -150,7 +150,6 @@ class Agent:
             )
             model_call_id = record_model_call(
                 self._engine,
-                ts=self._now(),
                 session_id=conversation.id,
                 source=LogSource.CHAT,
                 model=conversation.model,
@@ -236,7 +235,6 @@ class Agent:
         args = dict(call.input)
         record_tool_call(
             self._engine,
-            ts=self._now(),
             session_id=conversation.id,
             tool=call.name,
             args=args,

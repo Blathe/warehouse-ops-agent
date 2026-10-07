@@ -29,7 +29,7 @@ New table `model_call_log`, one row per Claude request:
 | Column | Notes |
 |---|---|
 | `id` | PK |
-| `ts` | warehouse clock, like `tool_call_log.ts` |
+| `ts` | real time (`clock.wall_now`), not the pinned warehouse clock, so a log row says when it happened |
 | `session_id` | same values as `tool_call_log` (conversation id, `investigation:<id>`) |
 | `source` | `CHAT`, `INVESTIGATOR` or `MCP` (`LogSource`) |
 | `model` | model id |
