@@ -8,7 +8,8 @@ from pydantic import BaseModel
 from sqlalchemy import Engine
 from sqlmodel import Session
 
-from warehouse_ops.db.models import Approval, ToolCallLog
+from warehouse_ops.agent.pricing import cost_usd
+from warehouse_ops.db.models import Approval, LogSource, ModelCallLog, ToolCallLog
 
 WAREHOUSE_CONTEXT = """\
 The warehouse is a fishing tackle distribution centre. Zone A holds small tackle (lures,
@@ -27,6 +28,37 @@ def summarize(result: object) -> str:
     return str(result)[:200]
 
 
+def record_model_call(
+    engine: Engine,
+    *,
+    ts: datetime,
+    session_id: str,
+    source: LogSource,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    duration_ms: int,
+    stop_reason: str | None,
+) -> int:
+    """Record one Claude request and its cost; returns the row id for tool calls to link to."""
+    with Session(engine) as session:
+        row = ModelCallLog(
+            ts=ts,
+            session_id=session_id,
+            source=source,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd(model, input_tokens, output_tokens),
+            duration_ms=duration_ms,
+            stop_reason=stop_reason,
+        )
+        session.add(row)
+        session.commit()
+        assert row.id is not None
+        return row.id
+
+
 def record_tool_call(
     engine: Engine,
     *,
@@ -37,12 +69,16 @@ def record_tool_call(
     summary: str,
     duration_ms: int,
     approval: Approval = Approval.NOT_APPLICABLE,
+    source: LogSource = LogSource.MCP,
+    model_call_id: int | None = None,
 ) -> None:
     with Session(engine) as session:
         session.add(
             ToolCallLog(
                 ts=ts,
                 session_id=session_id,
+                source=source,
+                model_call_id=model_call_id,
                 tool=tool,
                 args_json=json.dumps(args, default=str),
                 result_summary=summary,

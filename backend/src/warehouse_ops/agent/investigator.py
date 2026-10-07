@@ -7,6 +7,7 @@ by calling ``submit_findings``; it can't accept or recount anything (a person do
 
 import json
 import os
+import time
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -23,14 +24,14 @@ from warehouse_ops.agent.execution import execute_tool_call
 from warehouse_ops.agent.models import is_supported, request_options
 from warehouse_ops.agent.tools import TOOLS, ToolContext
 from warehouse_ops.db.engine import readonly_session
-from warehouse_ops.db.models import Investigation, InvestigationStatus
+from warehouse_ops.db.models import Investigation, InvestigationStatus, LogSource
 from warehouse_ops.services.cycle_counts import (
     Cause,
     InvestigationOut,
     get_cycle_count,
     investigation_out,
 )
-from warehouse_ops.tool_log import WAREHOUSE_CONTEXT
+from warehouse_ops.tool_log import WAREHOUSE_CONTEXT, record_model_call
 
 DEFAULT_INVESTIGATOR_MODEL = "claude-sonnet-5-5"
 NO_KEY = "No Claude API key is set. Add ANTHROPIC_API_KEY to the .env file and restart the API."
@@ -146,7 +147,9 @@ class Investigator:
                     ),
                 }
             ]
+            session_id = f"investigation:{investigation_id}"
             for _ in range(MAX_STEPS):
+                started = time.perf_counter()
                 response = self._client.beta.messages.create(
                     model=self._model,
                     max_tokens=MAX_TOKENS,
@@ -154,6 +157,17 @@ class Investigator:
                     tools=TOOL_PARAMS,
                     messages=messages,
                     **request_options(self._model),
+                )
+                model_call_id = record_model_call(
+                    self._engine,
+                    ts=self._now(),
+                    session_id=session_id,
+                    source=LogSource.INVESTIGATOR,
+                    model=self._model,
+                    input_tokens=response.usage.input_tokens,
+                    output_tokens=response.usage.output_tokens,
+                    duration_ms=round((time.perf_counter() - started) * 1000),
+                    stop_reason=response.stop_reason,
                 )
                 if response.stop_reason == "refusal":
                     return self._finish(investigation_id, tool_calls, error="The model declined")
@@ -179,7 +193,9 @@ class Investigator:
                         INVESTIGATION_TOOLS,
                         call,
                         ToolContext(now=self._now()),
-                        session_id=f"investigation:{investigation_id}",
+                        session_id=session_id,
+                        source=LogSource.INVESTIGATOR,
+                        model_call_id=model_call_id,
                     )
                     results.append(block)
                 messages.append({"role": "user", "content": results})

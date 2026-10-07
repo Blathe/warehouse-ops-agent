@@ -9,9 +9,9 @@ from sqlmodel import Session
 from tests.agent.fakes import FakeClient, text_reply, tool_reply
 from tests.conftest import AS_OF, make_memory_engine
 from warehouse_ops.agent.models import MODEL_OPTIONS
+from warehouse_ops.agent.pricing import cost_usd
 from warehouse_ops.db.seed import seed_database
 from warehouse_ops.evals.cases import EvalCase, ExpectedCall
-from warehouse_ops.evals.common import cost_usd
 from warehouse_ops.evals.runner import (
     CaseResult,
     format_result,

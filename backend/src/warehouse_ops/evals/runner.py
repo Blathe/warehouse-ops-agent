@@ -25,6 +25,7 @@ from sqlmodel import Session, select
 
 from warehouse_ops.agent.loop import Agent, AgentTurn, Conversation
 from warehouse_ops.agent.models import DEFAULT_MODEL, MODEL_OPTIONS, is_supported
+from warehouse_ops.agent.pricing import cost_usd
 from warehouse_ops.db.engine import BACKEND_DIR
 from warehouse_ops.db.models import ReplenishmentTask
 from warehouse_ops.evals.cases import DEFAULT_CASES_PATH, EvalCase, Facts, load_cases, resolve
@@ -33,7 +34,6 @@ from warehouse_ops.evals.common import (
     RESULTS_DIR,
     Meter,
     MeteredClient,
-    cost_usd,
     seeded_engine,
 )
 from warehouse_ops.evals.scoring import CaseScore, Observed, ObservedCall, score_case

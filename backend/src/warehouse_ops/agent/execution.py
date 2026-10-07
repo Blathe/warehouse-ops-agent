@@ -14,7 +14,7 @@ from sqlmodel import Session
 
 from warehouse_ops.agent.tools import ToolContext, ToolSpec
 from warehouse_ops.db.engine import readonly_session
-from warehouse_ops.db.models import Approval
+from warehouse_ops.db.models import Approval, LogSource
 from warehouse_ops.services.errors import NotFoundError, RuleViolationError
 from warehouse_ops.tool_log import record_tool_call, summarize
 
@@ -34,6 +34,8 @@ def execute_tool_call(
     ctx: ToolContext,
     *,
     session_id: str,
+    source: LogSource,
+    model_call_id: int | None = None,
     approval: Approval = Approval.NOT_APPLICABLE,
 ) -> tuple[BetaToolResultBlockParam, ToolTrace]:
     """Run ``call`` and return the tool_result for Claude plus a trace for the UI.
@@ -71,6 +73,8 @@ def execute_tool_call(
         summary=summary,
         duration_ms=round((time.perf_counter() - started) * 1000),
         approval=approval,
+        source=source,
+        model_call_id=model_call_id,
     )
     trace = ToolTrace(tool=call.name, input=args, ok=ok, summary=summary, approval=approval)
     block: BetaToolResultBlockParam = {
