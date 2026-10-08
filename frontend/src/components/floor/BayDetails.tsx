@@ -37,7 +37,7 @@ export function BayDetails({ bay }: { bay: Bay }) {
           </Badge>
         )}
         {bay.open_discrepancies.length > 0 && (
-          <Badge className="self-start bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200">
+          <Badge className="self-start bg-status-count-soft text-status-count-ink">
             Count discrepancy open at {bay.open_discrepancies.join(', ')}
           </Badge>
         )}

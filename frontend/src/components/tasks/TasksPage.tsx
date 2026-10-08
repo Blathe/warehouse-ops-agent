@@ -101,7 +101,7 @@ function TaskCard({
       aria-label={`Task #${task.task_id}`}
       className={cn(
         'flex flex-col gap-3 rounded-xl border bg-card p-4 text-card-foreground sm:flex-row sm:items-start sm:justify-between',
-        task.status === 'PROPOSED' && 'border-amber-300 dark:border-amber-700',
+        task.status === 'PROPOSED' && 'border-status-low/50',
       )}
     >
       <div className="flex min-w-0 flex-col gap-2">

@@ -3,9 +3,9 @@ import { cn } from '@/lib/utils'
 
 const DOT: Record<Tone, string> = {
   info: 'bg-muted-foreground/50',
-  success: 'bg-emerald-500',
-  warning: 'bg-amber-400',
-  error: 'bg-red-500',
+  success: 'bg-status-ok',
+  warning: 'bg-status-low',
+  error: 'bg-status-empty',
 }
 
 // What the agent has done in this session, newest first.
