@@ -17,6 +17,11 @@ function renderApp(path = '/workspace'): ReturnType<typeof render> {
   return render(ui)
 }
 
+// The model, supervisor name and crew simulation live in the settings popover.
+async function openSettings(user: ReturnType<typeof userEvent.setup> = userEvent.setup()) {
+  await user.click(screen.getByRole('button', { name: 'Settings' }))
+}
+
 const models = {
   default: 'claude-opus-5-5',
   models: [
@@ -125,6 +130,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('App model picker', () => {
   it('defaults to the backend default and lists prices', async () => {
     renderApp()
+    await openSettings()
     const picker = await screen.findByLabelText('Model')
     expect(picker).toHaveValue('claude-opus-5-5')
     expect(within(picker).getByText('Claude Haiku 4.5 ($1 / $5 per M tokens)')).toBeInTheDocument()
@@ -132,6 +138,7 @@ describe('App model picker', () => {
 
   it('sends the chosen model, remembers it and labels the reply', async () => {
     renderApp()
+    await openSettings()
     await userEvent.selectOptions(await screen.findByLabelText('Model'), 'claude-haiku-4-5')
     await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
 
@@ -147,6 +154,7 @@ describe('App model picker', () => {
   it('restores a remembered model', async () => {
     localStorage.setItem('warehouse-ops.model', 'claude-haiku-4-5')
     renderApp()
+    await openSettings()
     expect(await screen.findByLabelText('Model')).toHaveValue('claude-haiku-4-5')
   })
 })
@@ -285,6 +293,7 @@ describe('App crew simulation', () => {
     })
 
     expect(ticks()).toBe(0)
+    await openSettings()
     expect(screen.getByRole('button', { name: /Simulate crew/ })).toHaveAttribute('aria-pressed', 'false')
   })
 
@@ -293,6 +302,7 @@ describe('App crew simulation', () => {
     tickReplies = [{ completed: { ...activeTasks[0], status: 'DONE' } }]
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     renderApp('/floor-map') // the map is on show, so it should reload when a task finishes
+    await openSettings(user)
     const toggle = screen.getByRole('button', { name: /Simulate crew/ })
 
     await user.click(toggle)
@@ -326,6 +336,7 @@ describe('App crew simulation', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     renderApp()
+    await openSettings(user)
     await user.click(screen.getByRole('button', { name: /Simulate crew/ }))
 
     await act(async () => {
@@ -345,6 +356,7 @@ describe('App crew simulation', () => {
     ]
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     renderApp()
+    await openSettings(user)
     const toggle = screen.getByRole('button', { name: /Simulate crew/ })
     await user.click(toggle)
 
@@ -458,6 +470,38 @@ describe('App command palette', () => {
 
     await userEvent.keyboard('{Control>}k{/Control}')
     await userEvent.click(await screen.findByRole('option', { name: 'Start the crew simulation' }))
+    // The header shows the crew is running, and the settings toggle agrees.
+    expect(screen.getByRole('button', { name: 'Stop the crew simulation' })).toBeInTheDocument()
+    await openSettings()
     expect(screen.getByRole('button', { name: /Simulate crew/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
+describe('App settings menu', () => {
+  it('keeps the supervisor name in the sidebar and remembers it', async () => {
+    renderApp()
+    const settings = screen.getByRole('button', { name: 'Settings' })
+    expect(settings).toHaveTextContent('Supervisor')
+
+    await openSettings()
+    const name = screen.getByLabelText('Supervisor name')
+    await userEvent.clear(name)
+    await userEvent.type(name, 'Pat')
+    await userEvent.tab() // leaving the field saves it
+
+    expect(settings).toHaveTextContent('Pat')
+    expect(localStorage.getItem('warehouse-ops.supervisor')).toBe('Pat')
+  })
+
+  it('stops the crew from the header', async () => {
+    renderApp()
+    await openSettings()
+    await userEvent.click(screen.getByRole('button', { name: /Simulate crew/ }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stop the crew simulation' }))
+
+    expect(screen.queryByRole('button', { name: 'Stop the crew simulation' })).not.toBeInTheDocument()
+    await openSettings() // clicking outside closed the popover
+    expect(screen.getByRole('button', { name: /Simulate crew/ })).toHaveAttribute('aria-pressed', 'false')
   })
 })
