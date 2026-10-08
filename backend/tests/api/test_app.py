@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from random import Random
+from typing import Any
 
 import anthropic
 import httpx2
@@ -63,6 +64,86 @@ def test_chat_then_approve(engine: Engine) -> None:
     ).json()
     assert third["status"] == "done" and third["reply"] == "Task created."
     assert third["tool_calls"][0]["approval"] == "approved"
+
+
+def read_stream(response: httpx2.Response) -> list[tuple[str, dict[str, Any]]]:
+    """Parse a server-sent event stream into (event name, data) pairs."""
+    events = []
+    for block in response.text.strip().split("\n\n"):
+        name, data = block.split("\n", 1)
+        events.append((name.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
+    return events
+
+
+def test_chat_streams_steps_then_the_turn(engine: Engine) -> None:
+    fake = FakeClient(
+        tool_reply(("tu_1", "list_replenishment_needs", {})),
+        text_reply("13 faces need stock."),
+    )
+    api = make_client(engine, fake)
+
+    response = api.post("/api/chat/stream", json={"message": "What needs replenishing?"})
+
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = read_stream(response)
+    assert [name for name, _ in events] == ["step", "step", "step", "step", "turn"]
+    assert [data["type"] for name, data in events if name == "step"] == [
+        "thinking",
+        "tool_start",
+        "tool_end",
+        "thinking",
+    ]
+    turn = events[-1][1]
+    assert turn["status"] == "done" and turn["reply"] == "13 faces need stock."
+    assert turn["tool_calls"][0]["tool"] == "list_replenishment_needs"
+
+
+def test_streamed_approval_creates_the_task(engine: Engine) -> None:
+    fake = FakeClient(
+        tool_reply(("tu_1", "create_replenishment_task", create_args(engine))),
+        text_reply("Task created."),
+    )
+    api = make_client(engine, fake)
+    first = read_stream(api.post("/api/chat/stream", json={"message": "Refill"}))
+    assert first[-1][1]["status"] == "needs_approval"
+    conversation_id = first[-1][1]["conversation_id"]
+
+    events = read_stream(
+        api.post(
+            f"/api/conversations/{conversation_id}/approval/stream",
+            json={"approve": True, "decided_by": "Pat"},
+        )
+    )
+
+    assert events[-1][0] == "turn" and events[-1][1]["reply"] == "Task created."
+    assert [d["type"] for n, d in events if n == "step"][:2] == ["tool_start", "tool_end"]
+
+
+def test_stream_reports_failures_as_an_error_event(engine: Engine) -> None:
+    api = make_client(engine, FakeClient())
+
+    unknown = read_stream(
+        api.post("/api/chat/stream", json={"message": "hi", "conversation_id": "nope"})
+    )
+    assert unknown == [("error", {"status": 404, "detail": "No conversation 'nope'"})]
+
+    nothing_pending = make_client(engine, FakeClient(text_reply("Hi")))
+    conversation_id = read_stream(nothing_pending.post("/api/chat/stream", json={"message": "hi"}))[
+        -1
+    ][1]["conversation_id"]
+    rejected = read_stream(
+        nothing_pending.post(
+            f"/api/conversations/{conversation_id}/approval/stream",
+            json={"approve": True, "decided_by": "Pat"},
+        )
+    )
+    assert rejected[0][0] == "error" and rejected[0][1]["status"] == 409
+
+
+def test_stream_rejects_an_unsupported_model_up_front(engine: Engine) -> None:
+    api = make_client(engine, FakeClient())
+    response = api.post("/api/chat/stream", json={"message": "hi", "model": "gpt-9"})
+    assert response.status_code == 422
 
 
 def test_unknown_conversation_is_404(engine: Engine) -> None:
