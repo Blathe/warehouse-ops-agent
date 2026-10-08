@@ -1,9 +1,9 @@
-import { MapPinIcon, PauseIcon, PlayIcon, SearchIcon, Trash2Icon } from 'lucide-react'
+import { SearchIcon } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 
-import { ActivityFeed } from '@/components/activity/ActivityFeed'
+import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import {
   activityFromCompletion,
   activityFromTurn,
@@ -19,14 +19,14 @@ import { formatVariance } from '@/components/counts/status'
 import { FloorMapPage } from '@/components/floor/FloorMapPage'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { CommandPalette } from '@/components/layout/CommandPalette'
+import { SettingsMenu } from '@/components/layout/SettingsMenu'
 import { Page } from '@/components/layout/Page'
 import { PAGES } from '@/components/layout/pages'
 import { OverviewPage } from '@/components/overview/OverviewPage'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
-import { ModelPicker } from '@/components/ModelPicker'
 import { TasksPage } from '@/components/tasks/TasksPage'
+import { WorkspaceLayout } from '@/components/workspace/WorkspaceLayout'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { Toaster } from '@/components/ui/sonner'
@@ -232,38 +232,16 @@ export default function App() {
             },
           }}
           footer={
-            <div className="flex flex-col gap-3 p-1 text-xs text-muted-foreground">
-              <Button
-                size="sm"
-                variant={simulating ? 'secondary' : 'outline'}
-                aria-pressed={simulating}
-                title="Simulate the warehouse crew finishing one approved task every 5 seconds"
-                onClick={() => setSimulating((on) => !on)}
-                className="justify-start"
-              >
-                {simulating ? <PauseIcon /> : <PlayIcon />}
-                Simulate crew
-                {simulating && (
-                  <span aria-hidden className="ml-auto size-2 animate-pulse rounded-full bg-status-ok" />
-                )}
-              </Button>
-              {model && models.length > 0 && (
-                <label className="flex flex-col gap-1">
-                  Chat model
-                  <ModelPicker models={models} value={model} onChange={changeModel} />
-                </label>
-              )}
-              <label className="flex flex-col gap-1">
-                Approving as
-                <Input
-                  aria-label="Supervisor name"
-                  value={supervisor}
-                  onChange={(event) => setSupervisor(event.target.value)}
-                  onBlur={() => save(NAME_KEY, supervisor.trim() || 'Supervisor')}
-                  className="h-8"
-                />
-              </label>
-            </div>
+            <SettingsMenu
+              supervisor={supervisor}
+              onSupervisorChange={setSupervisor}
+              onSupervisorCommit={() => save(NAME_KEY, supervisor.trim() || 'Supervisor')}
+              models={models}
+              model={model}
+              onModelChange={changeModel}
+              simulating={simulating}
+              onToggleSimulation={() => setSimulating((on) => !on)}
+            />
           }
         />
         <SidebarInset className="h-dvh min-h-0 overflow-hidden">
@@ -287,6 +265,18 @@ export default function App() {
                   ))}
                 </nav>
               )}
+              {simulating && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Stop the crew simulation"
+                  title="The simulated crew is finishing approved tasks. Click to stop."
+                  onClick={() => setSimulating(false)}
+                >
+                  <span aria-hidden className="size-2 animate-pulse rounded-full bg-status-ok" />
+                  <span className="hidden sm:inline">Crew running</span>
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"
@@ -303,59 +293,27 @@ export default function App() {
           </header>
 
           {/* The workspace stays mounted (just hidden) on other pages, so the conversation
-              survives moving around the app. Large screens: chat on the left, the agent's
-              activity in a column on the right. Narrow screens show one at a time. */}
-          <div className={cn('flex min-h-0 flex-1', !onWorkspace && 'hidden')}>
-            <section
-              aria-label="Chat"
-              className={cn(
-                'min-h-0 flex-1 flex-col lg:flex',
-                view === 'chat' ? 'flex' : 'hidden',
-              )}
-            >
-              <Chat
-                supervisor={supervisor.trim() || 'Supervisor'}
-                model={model}
-                modelLabels={labels}
-                onTurn={handleTurn}
-              />
-            </section>
-            <aside
-              aria-labelledby="activity-heading"
-              className={cn(
-                'min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:w-96 lg:flex-none lg:shrink-0 lg:border-l',
-                view === 'activity' ? 'flex' : 'hidden lg:flex',
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <h2 id="activity-heading" className="text-sm font-semibold">
-                  Agent activity
-                </h2>
-                {activity.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    aria-label="Clear agent activity"
-                    onClick={() => setActivity([])}
-                  >
-                    <Trash2Icon />
-                    Clear
-                  </Button>
-                )}
-              </div>
-              {highlight.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="justify-start"
-                  onClick={() => showOnMap(highlight[0])}
-                >
-                  <MapPinIcon />
-                  Show {highlight[0]} on the floor map
-                </Button>
-              )}
-              <ActivityFeed items={activity} />
-            </aside>
+              survives moving around the app. */}
+          <div className={cn('flex min-h-0 flex-1 flex-col', !onWorkspace && 'hidden')}>
+            <WorkspaceLayout
+              view={view}
+              chat={
+                <Chat
+                  supervisor={supervisor.trim() || 'Supervisor'}
+                  model={model}
+                  modelLabels={labels}
+                  onTurn={handleTurn}
+                />
+              }
+              activity={
+                <ActivityPanel
+                  items={activity}
+                  highlight={highlight}
+                  onClear={() => setActivity([])}
+                  onShowOnMap={showOnMap}
+                />
+              }
+            />
           </div>
 
           {/* The other pages mount only while shown, so they load fresh each time. */}

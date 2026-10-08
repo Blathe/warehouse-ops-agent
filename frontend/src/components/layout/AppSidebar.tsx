@@ -21,7 +21,7 @@ import {
 
 interface AppSidebarProps {
   badges: Partial<Record<PagePath, { count: number; label: string; className: string }>>
-  footer: ReactNode // controls that apply to the whole app (simulation, model, approver)
+  footer: ReactNode // the settings menu: approver name, model and crew simulation
 }
 
 // The left-hand navigation: app name, one link per page (with counts), shared controls below.
@@ -72,7 +72,7 @@ export function AppSidebar({ badges, footer }: AppSidebarProps) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="group-data-[collapsible=icon]:hidden">{footer}</SidebarFooter>
+      <SidebarFooter>{footer}</SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )

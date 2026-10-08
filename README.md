@@ -22,10 +22,10 @@ The second problem is **inventory that drifts** from what the system says: a man
 - **Rules live in code, not in the prompt.** Business rules (source must be a reserve location holding the SKU, quantity can't exceed what's there or overfill the pick face, no duplicate open tasks) are enforced in the service layer and tested.
 - **Every tool call is logged** (tool, arguments, result summary, duration, approval decision) and shown in the UI as a collapsible trace.
 - **Floor map.** Its own page: zones laid out with the dock and aisles, pick faces colored by stock status (OK, below min, empty, open task) or shaded by fill level, a zone filter, a hover card per bay and full stock details on click.
-- **Simulated floor crew.** A header toggle (off by default) finishes one approved task every 5 seconds, oldest first, and moves the stock for real, so the map and task count change live as the warehouse "works". The agent can't do this: completing a task is not a tool.
+- **Simulated floor crew.** A toggle in the settings menu (bottom of the sidebar; off by default, with a "Crew running" indicator in the header while it runs) finishes one approved task every 5 seconds, oldest first, and moves the stock for real, so the map and task count change live as the warehouse "works". The agent can't do this: completing a task is not a tool.
 - **Switchable models.** Chat with Claude Opus 5.5, Sonnet 5.5, or Haiku 4.5 from the UI.
 - **Also works as an MCP server**, so the same tools can be used from Claude Desktop ([setup](docs/claude-desktop.md)).
-- **Workspace.** Chat on the left and an activity feed of everything the agent did on the right. After each reply the floor map highlights the bays the agent is working on, one click away. An **Overview** page is the landing page, and a **Tasks** page lists every replenishment task.
+- **Workspace.** Chat on the left and an activity feed of everything the agent did on the right, with a draggable divider whose position is remembered. After each reply the floor map highlights the bays the agent is working on, one click away. An **Overview** page is the landing page, and a **Tasks** page lists every replenishment task.
 - **Quick navigation.** Press **Ctrl+K** (⌘K on a Mac) to jump to a page, flip dark mode, start the crew simulation or find a pick face by location, SKU or product name. Toasts report approvals, finished crew tasks and cycle counts wherever you are in the app.
 
 ### Cycle Count Investigator
