@@ -25,6 +25,7 @@ for (const name of ['ResizeObserver', 'IntersectionObserver'] as const) {
   }
 }
 Element.prototype.scrollTo ??= function () {}
+Element.prototype.scrollIntoView ??= function () {} // the command palette scrolls to the active item
 // jsdom lacks pointer capture, which toasts use for swipe-to-dismiss.
 Element.prototype.setPointerCapture ??= function () {}
 Element.prototype.releasePointerCapture ??= function () {}

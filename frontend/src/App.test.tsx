@@ -425,3 +425,39 @@ describe('App notifications', () => {
     expect(screen.queryByText('The agent needs your approval')).not.toBeInTheDocument()
   })
 })
+
+describe('App command palette', () => {
+  it('opens with Ctrl+K and jumps to a page', async () => {
+    renderApp()
+    await userEvent.keyboard('{Control>}k{/Control}')
+
+    await userEvent.type(await screen.findByPlaceholderText(/Go to a page/), 'cycle')
+    await userEvent.click(screen.getByRole('option', { name: 'Cycle counts' }))
+
+    expect(await screen.findByRole('heading', { name: 'Cycle counts', level: 1 })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(/Go to a page/)).not.toBeInTheDocument()
+  })
+
+  it('finds a pick face by SKU and shows it on the floor map', async () => {
+    renderApp()
+    await userEvent.click(screen.getByRole('button', { name: 'Open the command palette' }))
+
+    await userEvent.type(await screen.findByPlaceholderText(/Go to a page/), '58368')
+    await userEvent.click(await screen.findByRole('option', { name: /A-03-06-1/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Floor map', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^A-03-06-1/, pressed: true })).toBeInTheDocument()
+  })
+
+  it('switches the theme and the crew simulation', async () => {
+    renderApp()
+    await userEvent.keyboard('{Control>}k{/Control}')
+    await userEvent.click(await screen.findByRole('option', { name: 'Switch to dark mode' }))
+    expect(document.documentElement).toHaveClass('dark')
+    expect(screen.getByRole('button', { name: 'Switch to light mode' })).toBeInTheDocument()
+
+    await userEvent.keyboard('{Control>}k{/Control}')
+    await userEvent.click(await screen.findByRole('option', { name: 'Start the crew simulation' }))
+    expect(screen.getByRole('button', { name: /Simulate crew/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+})

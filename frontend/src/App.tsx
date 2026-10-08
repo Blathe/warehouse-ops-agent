@@ -1,4 +1,4 @@
-import { MapPinIcon, PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react'
+import { MapPinIcon, PauseIcon, PlayIcon, SearchIcon, Trash2Icon } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
@@ -18,6 +18,7 @@ import { CycleCountsPage, type CountEvent } from '@/components/counts/CycleCount
 import { formatVariance } from '@/components/counts/status'
 import { FloorMapPage } from '@/components/floor/FloorMapPage'
 import { AppSidebar } from '@/components/layout/AppSidebar'
+import { CommandPalette, SHORTCUT_LABEL } from '@/components/layout/CommandPalette'
 import { PAGES } from '@/components/layout/pages'
 import { OverviewPage } from '@/components/overview/OverviewPage'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
@@ -102,6 +103,7 @@ export default function App() {
   const [activeTasks, setActiveTasks] = useState<number | null>(null)
   const [openCounts, setOpenCounts] = useState<number | null>(null)
   const [simulating, setSimulating] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
   // The page being shown, readable from callbacks that outlive the render that created them.
   const pathnameRef = useRef(pathname)
   useEffect(() => {
@@ -283,6 +285,17 @@ export default function App() {
                   ))}
                 </nav>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-muted-foreground"
+                aria-label="Open the command palette"
+                onClick={() => setPaletteOpen(true)}
+              >
+                <SearchIcon />
+                <span className="hidden sm:inline">Search</span>
+                <kbd className="hidden rounded border px-1 text-[10px] font-medium sm:inline">{SHORTCUT_LABEL}</kbd>
+              </Button>
               <ThemeToggle />
             </div>
           </header>
@@ -401,6 +414,13 @@ export default function App() {
           </Routes>
         </SidebarInset>
       </SidebarProvider>
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onShowOnMap={showOnMap}
+        simulating={simulating}
+        onToggleSimulation={() => setSimulating((on) => !on)}
+      />
       <Toaster position="bottom-right" />
     </TooltipProvider>
   )
