@@ -65,23 +65,79 @@ export function getModels(): Promise<ModelsResponse> {
   return request('/api/models')
 }
 
-export function sendChat(
+// What the agent is doing right now, streamed while a turn runs.
+// Mirrors AgentEvent in backend/src/warehouse_ops/agent/loop.py.
+export interface AgentStep {
+  type: 'thinking' | 'tool_start' | 'tool_end'
+  tool: string | null
+  input: Record<string, unknown> | null
+  ok: boolean | null
+  summary: string | null
+}
+
+// Reads a server-sent event stream: blocks of "event: name" and "data: json" lines, each
+// block ended by a blank line. (The browser's EventSource can't POST, so this reads the
+// response body by hand, a bit like reading a StreamReader line by line in .NET.)
+async function postStream(
+  url: string,
+  body: unknown,
+  onStep: (step: AgentStep) => void,
+): Promise<AgentTurn> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok || !response.body) {
+    const data: unknown = await response.json().catch(() => null)
+    const detail = (data as { detail?: unknown } | null)?.detail
+    throw new ApiError(
+      typeof detail === 'string' ? detail : `Request failed (${response.status})`,
+    )
+  }
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  let turn: AgentTurn | null = null
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (value) buffer += value
+    let end: number
+    while ((end = buffer.indexOf('\n\n')) !== -1) {
+      const block = buffer.slice(0, end)
+      buffer = buffer.slice(end + 2)
+      const name = /^event: (.*)$/m.exec(block)?.[1]
+      const data: unknown = JSON.parse(/^data: (.*)$/m.exec(block)?.[1] ?? 'null')
+      if (name === 'step') onStep(data as AgentStep)
+      else if (name === 'turn') turn = data as AgentTurn
+      else if (name === 'error') throw new ApiError((data as { detail: string }).detail)
+    }
+    if (done) break
+  }
+  if (!turn) throw new ApiError('The connection closed before the agent finished')
+  return turn
+}
+
+export function streamChat(
   message: string,
   conversationId: string | null,
   model: string | null,
+  onStep: (step: AgentStep) => void,
 ): Promise<AgentTurn> {
-  return post('/api/chat', { message, conversation_id: conversationId, model })
+  return postStream('/api/chat/stream', { message, conversation_id: conversationId, model }, onStep)
 }
 
-export function sendApproval(
+export function streamApproval(
   conversationId: string,
   approve: boolean,
   decidedBy: string,
+  onStep: (step: AgentStep) => void,
 ): Promise<AgentTurn> {
-  return post(`/api/conversations/${conversationId}/approval`, {
-    approve,
-    decided_by: decidedBy,
-  })
+  return postStream(
+    `/api/conversations/${conversationId}/approval/stream`,
+    { approve, decided_by: decidedBy },
+    onStep,
+  )
 }
 
 export type PickStatus = 'ok' | 'low' | 'empty' | 'unassigned'

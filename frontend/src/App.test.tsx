@@ -99,6 +99,10 @@ const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
     const next = tickReplies.shift()
     return next instanceof Response ? next : json(next ?? { completed: null })
   }
+  // The chat and approval endpoints stream server-sent events: one `turn` event with the result.
+  if (url.endsWith('/stream')) {
+    return new Response(`event: turn\ndata: ${JSON.stringify(chatReply)}\n\n`)
+  }
   return json(chatReply)
 })
 
@@ -135,7 +139,7 @@ describe('App model picker', () => {
     expect(
       screen.getByText('Claude Haiku 4.5', { selector: '[data-slot="message-footer"]' }),
     ).toBeInTheDocument()
-    const chatCall = fetchMock.mock.calls.find(([url]) => url === '/api/chat')
+    const chatCall = fetchMock.mock.calls.find(([url]) => url === '/api/chat/stream')
     expect(JSON.parse(chatCall?.[1]?.body as string).model).toBe('claude-haiku-4-5')
     expect(localStorage.getItem('warehouse-ops.model')).toBe('claude-haiku-4-5')
   })

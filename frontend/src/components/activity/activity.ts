@@ -21,6 +21,31 @@ export function describeMove(input: Record<string, unknown>): string {
   return `${str(input.qty)} × SKU ${str(input.sku_code)} from ${str(input.from_location)} to ${str(input.to_location)}`
 }
 
+// What the agent is doing while a tool runs: "Checking replenishment needs in zone A".
+export function describeRunning(tool: string, input: Record<string, unknown>): string {
+  const zone = input.zone ? ` in zone ${str(input.zone)}` : ''
+  switch (tool) {
+    case 'list_replenishment_needs':
+      return `Checking replenishment needs${zone}`
+    case 'list_short_picks':
+      return `Looking up short picks${zone}`
+    case 'list_discrepancies':
+      return 'Checking open count discrepancies'
+    case 'get_inventory_history':
+      return `Reading inventory history${input.location ? ` for ${str(input.location)}` : ''}`
+    case 'get_nearby_stock':
+      return `Checking stock near ${str(input.location)}`
+    case 'list_open_picks':
+      return `Checking open picks at ${str(input.location)}`
+    case 'find_stock':
+      return `Finding stock for SKU ${str(input.sku_code)}`
+    case 'create_replenishment_task':
+      return `Creating the replenishment task for ${str(input.to_location)}`
+    default:
+      return `Running ${tool}`
+  }
+}
+
 // Turns one tool call from the agent into a line a supervisor can read.
 export function describeToolCall(call: ToolTrace): Omit<ActivityItem, 'id' | 'at'> {
   const input = call.input

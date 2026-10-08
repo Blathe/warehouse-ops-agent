@@ -6,26 +6,34 @@ Conversations live in memory for now, so they are lost on restart and the API
 must run as a single process.
 """
 
+import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import datetime
 from pathlib import Path
+from queue import Queue
 from random import Random
-from threading import Lock
+from threading import Lock, Thread
 from typing import Literal
 
 import anthropic
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine
 from sqlmodel import Session
 
 from warehouse_ops import clock
 from warehouse_ops.agent.investigator import Investigator
-from warehouse_ops.agent.loop import Agent, AgentStateError, AgentTurn, Conversation
+from warehouse_ops.agent.loop import (
+    Agent,
+    AgentStateError,
+    AgentTurn,
+    Conversation,
+    EventSink,
+)
 from warehouse_ops.agent.models import DEFAULT_MODEL, MODEL_OPTIONS, ModelOption, is_supported
 from warehouse_ops.db.engine import BACKEND_DIR, get_engine, readonly_session
 from warehouse_ops.db.models import Approval, CountStatus, LogSource, ReplenishmentStatus
@@ -290,27 +298,90 @@ def create_app(
     def models() -> ModelsResponse:
         return ModelsResponse(default=DEFAULT_MODEL, models=MODEL_OPTIONS)
 
-    @app.post("/api/chat")
-    def chat(request: ChatRequest) -> AgentTurn:
+    def start_chat(request: ChatRequest, on_event: EventSink | None) -> AgentTurn:
+        """Send a message (creating the conversation first if needed). Call with the lock held."""
+        if request.conversation_id is None:
+            conversation = Conversation()
+            conversations[conversation.id] = conversation
+        else:
+            conversation = get_conversation(request.conversation_id)
+        return run(lambda: agent.send(conversation, request.message, request.model, on_event))
+
+    def decide(
+        conversation_id: str, request: ApprovalRequest, on_event: EventSink | None
+    ) -> AgentTurn:
+        """Apply a person's decision on the pending write. Call with the lock held."""
+        conversation = get_conversation(conversation_id)
+        return run(
+            lambda: agent.resolve(
+                conversation,
+                approve=request.approve,
+                decided_by=request.decided_by,
+                on_event=on_event,
+            )
+        )
+
+    def stream(work: Callable[[EventSink], AgentTurn]) -> StreamingResponse:
+        """Run a turn on a worker thread and send its progress as server-sent events.
+
+        ``step`` events say what the agent is doing, then one ``turn`` event carries the same
+        result the plain endpoints return. Failures arrive as an ``error`` event (status and
+        detail), because the response has already started by then.
+        """
+        events: Queue[str | None] = Queue()
+
+        def send(name: str, data: BaseModel | dict[str, object]) -> None:
+            body = data.model_dump_json() if isinstance(data, BaseModel) else json.dumps(data)
+            events.put(f"event: {name}\ndata: {body}\n\n")
+
+        def worker() -> None:
+            try:
+                with lock:
+                    turn = work(lambda event: send("step", event))
+                send("turn", turn)
+            except HTTPException as exc:
+                send("error", {"status": exc.status_code, "detail": exc.detail})
+            except Exception:
+                send("error", {"status": 500, "detail": "Something went wrong"})
+            finally:
+                events.put(None)
+
+        Thread(target=worker, daemon=True).start()
+
+        def body() -> Iterator[str]:
+            while (item := events.get()) is not None:
+                yield item
+
+        return StreamingResponse(
+            body(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    def check_model(request: ChatRequest) -> None:
         if request.model is not None and not is_supported(request.model):
             raise HTTPException(422, f"Unsupported model {request.model!r}")
+
+    @app.post("/api/chat")
+    def chat(request: ChatRequest) -> AgentTurn:
+        check_model(request)
         with lock:
-            if request.conversation_id is None:
-                conversation = Conversation()
-                conversations[conversation.id] = conversation
-            else:
-                conversation = get_conversation(request.conversation_id)
-            return run(lambda: agent.send(conversation, request.message, request.model))
+            return start_chat(request, None)
+
+    @app.post("/api/chat/stream")
+    def chat_stream(request: ChatRequest) -> StreamingResponse:
+        """Like /api/chat, but streams what the agent is doing as it works."""
+        check_model(request)
+        return stream(lambda on_event: start_chat(request, on_event))
 
     @app.post("/api/conversations/{conversation_id}/approval")
     def approval(conversation_id: str, request: ApprovalRequest) -> AgentTurn:
         with lock:
-            conversation = get_conversation(conversation_id)
-            return run(
-                lambda: agent.resolve(
-                    conversation, approve=request.approve, decided_by=request.decided_by
-                )
-            )
+            return decide(conversation_id, request, None)
+
+    @app.post("/api/conversations/{conversation_id}/approval/stream")
+    def approval_stream(conversation_id: str, request: ApprovalRequest) -> StreamingResponse:
+        return stream(lambda on_event: decide(conversation_id, request, on_event))
 
     if static_dir is not None:
         mount_front_end(app, static_dir)

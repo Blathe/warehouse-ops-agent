@@ -69,6 +69,23 @@ class PendingAction(BaseModel):
     input: dict[str, Any]
 
 
+class AgentEvent(BaseModel):
+    """Progress while a turn runs, so a UI can show what the agent is doing right now.
+
+    ``thinking``: a request is going to Claude. ``tool_start`` / ``tool_end``: a tool call
+    began / finished (``ok`` and ``summary`` are only set on the end event).
+    """
+
+    type: Literal["thinking", "tool_start", "tool_end"]
+    tool: str | None = None
+    input: dict[str, Any] | None = None
+    ok: bool | None = None
+    summary: str | None = None
+
+
+EventSink = Callable[[AgentEvent], None]
+
+
 class AgentTurn(BaseModel):
     conversation_id: str
     model: str
@@ -103,10 +120,17 @@ class Agent:
         self._engine = engine
         self._now = now
 
-    def send(self, conversation: Conversation, text: str, model: str | None = None) -> AgentTurn:
+    def send(
+        self,
+        conversation: Conversation,
+        text: str,
+        model: str | None = None,
+        on_event: EventSink | None = None,
+    ) -> AgentTurn:
         """Add a user message and run until Claude answers or asks to write.
 
         ``model`` switches the conversation to another supported model from here on.
+        ``on_event`` is told about each step as it happens (used for streaming).
         """
         if conversation.pending_calls:
             raise AgentStateError("Approve or reject the pending action first")
@@ -117,9 +141,16 @@ class Agent:
         conversation.messages.append(
             {"role": "user", "content": f"[Warehouse time: {self._now():%Y-%m-%d %H:%M}]\n{text}"}
         )
-        return self._run(conversation, [])
+        return self._run(conversation, [], on_event)
 
-    def resolve(self, conversation: Conversation, *, approve: bool, decided_by: str) -> AgentTurn:
+    def resolve(
+        self,
+        conversation: Conversation,
+        *,
+        approve: bool,
+        decided_by: str,
+        on_event: EventSink | None = None,
+    ) -> AgentTurn:
         """Apply a person's decision on the pending write(s) and let Claude continue."""
         if not conversation.pending_calls:
             raise AgentStateError("Nothing is waiting for approval")
@@ -128,17 +159,25 @@ class Agent:
         for call in conversation.pending_calls:
             if approve:
                 ctx = ToolContext(now=self._now(), approved_by=decided_by)
-                results.append(self._execute(conversation, call, ctx, traces, Approval.APPROVED))
+                results.append(
+                    self._execute(
+                        conversation, call, ctx, traces, Approval.APPROVED, on_event=on_event
+                    )
+                )
             else:
                 results.append(self._reject(conversation, call, decided_by, traces))
         conversation.pending_calls = []
         conversation.pending_results = []
         conversation.pending_model_call_id = None
         conversation.messages.append({"role": "user", "content": results})
-        return self._run(conversation, traces)
+        return self._run(conversation, traces, on_event)
 
-    def _run(self, conversation: Conversation, traces: list[ToolTrace]) -> AgentTurn:
+    def _run(
+        self, conversation: Conversation, traces: list[ToolTrace], on_event: EventSink | None
+    ) -> AgentTurn:
         for _ in range(MAX_STEPS):
+            if on_event:
+                on_event(AgentEvent(type="thinking"))
             started = time.perf_counter()
             response = self._client.beta.messages.create(
                 model=conversation.model,
@@ -180,7 +219,14 @@ class Agent:
                 else:
                     ctx = ToolContext(now=self._now())
                     results.append(
-                        self._execute(conversation, call, ctx, traces, model_call_id=model_call_id)
+                        self._execute(
+                            conversation,
+                            call,
+                            ctx,
+                            traces,
+                            model_call_id=model_call_id,
+                            on_event=on_event,
+                        )
                     )
 
             if writes:
@@ -210,7 +256,10 @@ class Agent:
         traces: list[ToolTrace],
         approval: Approval = Approval.NOT_APPLICABLE,
         model_call_id: int | None = None,
+        on_event: EventSink | None = None,
     ) -> BetaToolResultBlockParam:
+        if on_event:
+            on_event(AgentEvent(type="tool_start", tool=call.name, input=dict(call.input)))
         block, trace = execute_tool_call(
             self._engine,
             TOOLS,
@@ -222,6 +271,10 @@ class Agent:
             approval=approval,
         )
         traces.append(trace)
+        if on_event:
+            on_event(
+                AgentEvent(type="tool_end", tool=call.name, ok=trace.ok, summary=trace.summary)
+            )
         return block
 
     def _reject(

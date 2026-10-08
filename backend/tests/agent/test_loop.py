@@ -11,6 +11,7 @@ from tests.conftest import AS_OF, make_memory_engine
 from warehouse_ops.agent.loop import (
     MAX_STEPS,
     Agent,
+    AgentEvent,
     AgentStateError,
     Conversation,
 )
@@ -319,3 +320,44 @@ def test_unknown_model_is_rejected(engine: Engine) -> None:
     agent = make_agent(engine, FakeClient())
     with pytest.raises(ValueError, match="Unsupported model"):
         agent.send(Conversation(), "hi", model="gpt-whatever")
+
+
+def test_progress_events_follow_the_work(engine: Engine) -> None:
+    fake = FakeClient(
+        tool_reply(("tu_1", "list_replenishment_needs", {"zone": "A"})),
+        text_reply("Done."),
+    )
+    events: list[AgentEvent] = []
+
+    make_agent(engine, fake).send(Conversation(), "What needs stock?", on_event=events.append)
+
+    assert [(e.type, e.tool) for e in events] == [
+        ("thinking", None),
+        ("tool_start", "list_replenishment_needs"),
+        ("tool_end", "list_replenishment_needs"),
+        ("thinking", None),
+    ]
+    assert events[1].input == {"zone": "A"}
+    assert events[2].ok is True and events[2].summary
+
+
+def test_a_write_waits_for_approval_and_reports_its_events_afterwards(engine: Engine) -> None:
+    fake = FakeClient(
+        tool_reply(("tu_1", "create_replenishment_task", create_args(engine))),
+        text_reply("Created."),
+    )
+    agent = make_agent(engine, fake)
+    conversation = Conversation()
+    first: list[AgentEvent] = []
+    agent.send(conversation, "Refill it", on_event=first.append)
+    # The write is held back: no tool event until a person approves.
+    assert [e.type for e in first] == ["thinking"]
+
+    after: list[AgentEvent] = []
+    agent.resolve(conversation, approve=True, decided_by="Pat", on_event=after.append)
+
+    assert [(e.type, e.tool) for e in after] == [
+        ("tool_start", "create_replenishment_task"),
+        ("tool_end", "create_replenishment_task"),
+        ("thinking", None),
+    ]
