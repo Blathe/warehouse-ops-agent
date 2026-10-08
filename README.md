@@ -21,11 +21,11 @@ The second problem is **inventory that drifts** from what the system says: a man
 - **Human-only approval for writes.** The agent can only *propose* a replenishment task. When it does, the loop pauses and the UI shows an approval card. Approving or rejecting is exposed to the UI/API only, never as an agent or MCP tool, so a model can't approve its own proposal.
 - **Rules live in code, not in the prompt.** Business rules (source must be a reserve location holding the SKU, quantity can't exceed what's there or overfill the pick face, no duplicate open tasks) are enforced in the service layer and tested.
 - **Every tool call is logged** (tool, arguments, result summary, duration, approval decision) and shown in the UI as a collapsible trace.
-- **Floor map.** Pick faces colored by stock status (OK, below min, empty, open task), with details on click.
+- **Floor map.** Its own page: zones laid out with the dock and aisles, pick faces colored by stock status (OK, below min, empty, open task) or shaded by fill level, a zone filter, a hover card per bay and full stock details on click.
 - **Simulated floor crew.** A header toggle (off by default) finishes one approved task every 5 seconds, oldest first, and moves the stock for real, so the map and task count change live as the warehouse "works". The agent can't do this: completing a task is not a tool.
 - **Switchable models.** Chat with Claude Opus 5.5, Sonnet 5.5, or Haiku 4.5 from the UI.
 - **Also works as an MCP server**, so the same tools can be used from Claude Desktop ([setup](docs/claude-desktop.md)).
-- **Two-column workspace.** Chat on the left; the floor map and an activity feed of everything the agent did on the right. After each reply the map reloads and highlights the bays the agent is working on. A **Tasks** page lists every replenishment task.
+- **Workspace.** Chat on the left and an activity feed of everything the agent did on the right. After each reply the floor map highlights the bays the agent is working on, one click away. An **Overview** page is the landing page, and a **Tasks** page lists every replenishment task.
 
 ### Cycle Count Investigator
 

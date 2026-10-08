@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Bay, FloorMapData } from '@/lib/api'
-import { FloorMap } from './FloorMap'
+import { FloorMapPage } from './FloorMapPage'
 
 function bay(location: string, overrides: Partial<Bay['pick']> = {}): Bay {
   const [zone, aisle, number] = location.split('-')
@@ -42,19 +43,25 @@ const data: FloorMapData = {
   counts: { ok: 1, low: 0, empty: 1, unassigned: 1 },
 }
 
+// The app keeps the selected bay in its own state; this stands in for that.
+function Page({ highlight = [] }: { highlight?: string[] }) {
+  const [selected, setSelected] = useState<string | null>(null)
+  return <FloorMapPage selected={selected} onSelect={setSelected} highlight={highlight} />
+}
+
 function mockFetch(response: Response) {
   vi.stubGlobal('fetch', vi.fn(async () => response))
 }
 
 afterEach(() => vi.unstubAllGlobals())
 
-describe('FloorMap', () => {
+describe('FloorMapPage', () => {
   it('shows each bay with its status and the legend counts', async () => {
     mockFetch(new Response(JSON.stringify(data)))
-    render(<FloorMap />)
+    render(<Page />)
 
-    expect(await screen.findByText('Zone A: small tackle')).toBeInTheDocument()
-    expect(screen.getByText('Zone B: rods & reels')).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Zone A: small tackle' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Zone B: rods & reels' })).toBeInTheDocument()
     expect(screen.getByText('Empty (1)')).toBeInTheDocument()
     expect(
       screen.getByRole('button', {
@@ -65,7 +72,7 @@ describe('FloorMap', () => {
 
   it('shows a bay’s stock when clicked', async () => {
     mockFetch(new Response(JSON.stringify(data)))
-    render(<FloorMap />)
+    render(<Page />)
 
     await userEvent.click(await screen.findByRole('button', { name: /^A-03-04-1/ }))
 
@@ -77,14 +84,48 @@ describe('FloorMap', () => {
 
   it('explains an empty, unassigned pick face', async () => {
     mockFetch(new Response(JSON.stringify(data)))
-    render(<FloorMap />)
+    render(<Page />)
     await userEvent.click(await screen.findByRole('button', { name: /^B-01-01-1/ }))
     expect(screen.getByText('No SKU slotted in this pick face')).toBeInTheDocument()
   })
 
   it('shows an error when the backend is down', async () => {
     mockFetch(new Response(JSON.stringify({ detail: 'boom' }), { status: 500 }))
-    render(<FloorMap />)
+    render(<Page />)
     expect(await screen.findByText("Couldn't load the floor map: boom")).toBeInTheDocument()
+  })
+
+  it('filters the map to one zone and recounts the legend', async () => {
+    mockFetch(new Response(JSON.stringify(data)))
+    render(<Page />)
+    await screen.findByRole('region', { name: 'Zone B: rods & reels' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Zone A' }))
+
+    expect(screen.queryByRole('region', { name: 'Zone B: rods & reels' })).not.toBeInTheDocument()
+    const legend = screen.getByRole('list', { name: 'Legend' })
+    expect(within(legend).getByText('No SKU slotted (0)')).toBeInTheDocument()
+    expect(within(legend).getByText('OK (1)')).toBeInTheDocument()
+  })
+
+  it('switches between status colours and stock level shading', async () => {
+    mockFetch(new Response(JSON.stringify(data)))
+    render(<Page />)
+    const cell = await screen.findByRole('button', { name: /^A-03-05-1/ })
+    expect(cell).not.toHaveAttribute('style')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stock level' }))
+
+    // 100 of max 144 on hand, so the cell is shaded about 69% full.
+    expect(screen.getByRole('button', { name: /^A-03-05-1/ }).getAttribute('style')).toContain('69%')
+    expect(screen.getByText('Full')).toBeInTheDocument()
+  })
+
+  it('pulses the bays the agent is working on', async () => {
+    mockFetch(new Response(JSON.stringify(data)))
+    render(<Page highlight={['A-03-05-1']} />)
+
+    expect(await screen.findByRole('button', { name: /^A-03-05-1/ })).toHaveClass('animate-pulse')
+    expect(screen.getByRole('button', { name: /^A-03-04-1/ })).not.toHaveClass('animate-pulse')
   })
 })
