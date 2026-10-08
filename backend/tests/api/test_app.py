@@ -124,6 +124,14 @@ def test_floor_map(engine: Engine) -> None:
     assert first["pick"]["location"] == "A-01-01-1" and len(first["reserve"]) == 2
 
 
+def test_overview(engine: Engine) -> None:
+    body = make_client(engine, FakeClient()).get("/api/overview").json()
+
+    assert [z["zone"] for z in body["zones"]] == ["A", "B", "C"]
+    assert len(body["short_picks_by_hour"]) == 24
+    assert body["urgent_needs"] and "shelf_variance" not in str(body)
+
+
 def test_tasks_default_to_the_active_ones(engine: Engine) -> None:
     api = make_client(engine, FakeClient())
 
