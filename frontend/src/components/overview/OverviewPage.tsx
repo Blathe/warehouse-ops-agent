@@ -30,7 +30,7 @@ export function OverviewPage({ onShowOnMap, refreshKey = 0 }: OverviewPageProps)
   useEffect(load, [load, refreshKey])
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <div className="flex w-full flex-col gap-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Overview</h2>

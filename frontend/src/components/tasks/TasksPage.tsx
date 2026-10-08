@@ -38,7 +38,7 @@ export function TasksPage({ onShowOnMap, refreshKey = 0 }: TasksPageProps) {
   useEffect(load, [load, refreshKey])
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+    <div className="flex w-full flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Replenishment tasks</h2>
