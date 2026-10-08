@@ -18,9 +18,6 @@ import { getFloorMap, type Bay } from '@/lib/api'
 import { applyTheme, useCurrentTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
-// What to show on the button that opens the palette.
-export const SHORTCUT_LABEL = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘K' : 'Ctrl K'
-
 interface CommandPaletteProps {
   open: boolean
   onOpenChange: (open: boolean) => void

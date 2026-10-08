@@ -18,7 +18,8 @@ import { CycleCountsPage, type CountEvent } from '@/components/counts/CycleCount
 import { formatVariance } from '@/components/counts/status'
 import { FloorMapPage } from '@/components/floor/FloorMapPage'
 import { AppSidebar } from '@/components/layout/AppSidebar'
-import { CommandPalette, SHORTCUT_LABEL } from '@/components/layout/CommandPalette'
+import { CommandPalette } from '@/components/layout/CommandPalette'
+import { Page } from '@/components/layout/Page'
 import { PAGES } from '@/components/layout/pages'
 import { OverviewPage } from '@/components/overview/OverviewPage'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
@@ -38,6 +39,7 @@ import {
   type AgentTurn,
   type ModelOption,
 } from '@/lib/api'
+import { SHORTCUT_LABEL } from '@/lib/shortcut'
 import { cn } from '@/lib/utils'
 
 const NAME_KEY = 'warehouse-ops.supervisor'
@@ -363,51 +365,51 @@ export default function App() {
             <Route
               path="/overview"
               element={
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <Page>
                   <OverviewPage onShowOnMap={showOnMap} refreshKey={mapVersion} />
-                </div>
+                </Page>
               }
             />
             <Route
               path="/floor-map"
               element={
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <Page>
                   <FloorMapPage
                     refreshKey={mapVersion}
                     highlight={highlight}
                     selected={selectedBay}
                     onSelect={setSelectedBay}
                   />
-                </div>
+                </Page>
               }
             />
             <Route
               path="/tasks"
               element={
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <Page>
                   <TasksPage onShowOnMap={showOnMap} refreshKey={mapVersion} />
-                </div>
+                </Page>
               }
             />
             <Route
               path="/counts"
               element={
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <Page>
                   <CycleCountsPage
                     supervisor={supervisor.trim() || 'Supervisor'}
                     onShowOnMap={showOnMap}
                     onChange={handleCountEvent}
                     refreshKey={mapVersion}
                   />
-                </div>
+                </Page>
               }
             />
             <Route
               path="/agent-log"
               element={
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <Page>
                   <AgentLogPage refreshKey={mapVersion} />
-                </div>
+                </Page>
               }
             />
             <Route path="*" element={<Navigate to="/overview" replace />} />

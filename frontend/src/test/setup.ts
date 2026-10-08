@@ -30,10 +30,11 @@ Element.prototype.scrollIntoView ??= function () {} // the command palette scrol
 Element.prototype.setPointerCapture ??= function () {}
 Element.prototype.releasePointerCapture ??= function () {}
 
-// jsdom has no matchMedia; the sidebar uses it to tell phones from desktops.
+// jsdom has no matchMedia; the sidebar uses it to tell phones from desktops. Tests ask for
+// reduced motion so numbers and transitions land instantly instead of animating.
 window.matchMedia ??= (query: string) =>
   ({
-    matches: false,
+    matches: query.includes('prefers-reduced-motion'),
     media: query,
     onchange: null,
     addEventListener() {},

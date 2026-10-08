@@ -1,6 +1,7 @@
 import { ClipboardCheckIcon, MapPinIcon, RefreshCwIcon, RotateCcwIcon } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
+import { EmptyState } from '@/components/layout/EmptyState'
 import { CountingProgress } from '@/components/counts/CountingProgress'
 import { InvestigationPanel } from '@/components/counts/InvestigationPanel'
 import { COUNT_FILTERS, COUNT_STATUS, formatVariance } from '@/components/counts/status'
@@ -164,9 +165,9 @@ export function CycleCountsPage({
       {counts === null ? (
         !error && <p className="text-sm text-muted-foreground">Loading counts...</p>
       ) : counts.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <EmptyState icon={ClipboardCheckIcon} title="No counts here">
           {EMPTY_TEXT[filter]}
-        </p>
+        </EmptyState>
       ) : (
         <ul className="flex flex-col gap-3" aria-label="Cycle counts">
           {counts.map((count) => (
