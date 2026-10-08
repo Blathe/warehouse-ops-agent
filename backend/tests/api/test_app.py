@@ -1,16 +1,23 @@
+import json
 from pathlib import Path
+from random import Random
 
 import anthropic
 import httpx2
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine
+from sqlmodel import Session, select
 
 from tests.agent.fakes import FakeClient, text_reply, tool_reply
+from tests.agent.test_investigator import FINDINGS
 from tests.agent.test_loop import create_args
 from tests.conftest import AS_OF, make_memory_engine
+from warehouse_ops.agent.investigator import Investigator
 from warehouse_ops.api.app import create_app
+from warehouse_ops.db.models import ShelfVariance, ToolCallLog
 from warehouse_ops.db.seed import seed_database
+from warehouse_ops.services.cycle_counts import simulate_cycle_count
 
 
 @pytest.fixture
@@ -308,3 +315,84 @@ def test_serves_front_end_with_spa_fallback(engine: Engine, tmp_path: Path) -> N
     assert web.get("/../../etc/passwd").text == "<div id=root></div>"  # no escaping the folder
     assert web.get("/api/health").json() == {"status": "ok"}  # API routes win
     assert web.get("/api/nope").status_code == 404  # and unknown ones aren't index.html
+
+
+def test_agent_log_endpoints(engine: Engine) -> None:
+    fake = FakeClient(
+        tool_reply(
+            ("tu_1", "list_replenishment_needs", {"zone": "A"}),
+            ("tu_2", "list_replenishment_needs", {"zone": "B"}),
+        ),
+        text_reply("Done."),
+    )
+    api = make_client(engine, fake)
+    chat = api.post("/api/chat", json={"message": "What needs replenishing?"}).json()
+    session_id = chat["conversation_id"]
+
+    entries = api.get("/api/agent-log").json()
+    assert [e["tool"] for e in entries] == ["list_replenishment_needs"] * 2
+    assert entries[0]["source"] == "CHAT" and entries[0]["model"] == "claude-opus-5-5"
+    assert entries[0]["model_call_cost_usd"] == pytest.approx((10 * 4 + 10 * 20) / 1e6)
+    assert api.get("/api/agent-log", params={"tool": "find_stock"}).json() == []
+    assert len(api.get("/api/agent-log", params={"limit": 1}).json()) == 1
+    assert api.get("/api/agent-log", params={"source": "bogus"}).status_code == 422
+
+    summary = api.get("/api/agent-log/summary").json()
+    assert summary["total_cost_usd"] == pytest.approx(2 * (10 * 4 + 10 * 20) / 1e6)
+    assert (summary["model_calls"], summary["tool_calls"], summary["sessions"]) == (2, 2, 1)
+    assert api.get("/api/agent-log/summary", params={"source": "MCP"}).json()["sessions"] == 0
+
+    (listed,) = api.get("/api/agent-log/sessions").json()
+    assert listed["session_id"] == session_id and listed["tool_calls"] == 2
+
+    steps = api.get(f"/api/agent-log/sessions/{session_id}").json()
+    assert [len(s["tool_calls"]) for s in steps] == [2, 0]
+    assert steps[0]["model_call"]["stop_reason"] == "tool_use"
+    assert api.get("/api/agent-log/sessions/nope").status_code == 404
+
+
+def test_the_log_never_exposes_shelf_variance(engine: Engine) -> None:
+    """Investigations read a lot of data; none of the hidden truth may end up in the log."""
+    with Session(engine) as session:
+        run = simulate_cycle_count(session, rng=Random(1), now=AS_OF)
+        session.commit()
+        truth = session.exec(select(ShelfVariance)).all()
+    assert truth and run.discrepancies
+
+    for count in run.discrepancies:
+        fake = FakeClient(
+            tool_reply(
+                ("tu_1", "get_inventory_history", {"location": count.location}),
+                ("tu_2", "get_nearby_stock", {"location": count.location}),
+                ("tu_3", "list_open_picks", {"location": count.location}),
+                ("tu_4", "list_discrepancies", {}),
+                ("tu_5", "find_stock", {"sku_code": count.sku_code}),
+            ),
+            tool_reply(("tu_6", "submit_findings", FINDINGS)),
+        )
+        investigator = Investigator(fake.as_anthropic(), engine, now=lambda: AS_OF)
+        with Session(engine) as session:
+            investigation_id = investigator.start(session, count.id)
+            session.commit()
+        investigator.run(investigation_id)
+
+    api = make_client(engine, FakeClient())
+    everything = json.dumps(
+        [
+            api.get("/api/agent-log", params={"limit": 200}).json(),
+            api.get("/api/agent-log/summary").json(),
+            api.get("/api/agent-log/sessions").json(),
+        ]
+        + [
+            api.get(f"/api/agent-log/sessions/{s['session_id']}").json()
+            for s in api.get("/api/agent-log/sessions").json()
+        ]
+    )
+    with Session(engine) as session:
+        logged_text = " ".join(
+            f"{row.args_json} {row.result_summary}" for row in session.exec(select(ToolCallLog))
+        )
+    assert "shelf_variance" not in everything + logged_text
+    # The scenario names are the hidden cause behind each variance.
+    for scenario in {v.scenario for v in truth}:
+        assert scenario not in everything + logged_text

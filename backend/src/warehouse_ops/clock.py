@@ -9,6 +9,15 @@ import os
 from datetime import datetime
 
 
+def wall_now() -> datetime:
+    """The real time, for the agent log: when a call actually happened.
+
+    ``now()`` can be pinned to the seeded day, which is right for the warehouse's data
+    but would stamp every log row with the same moment.
+    """
+    return datetime.now().replace(microsecond=0)
+
+
 def now() -> datetime:
     value = os.environ.get("WAREHOUSE_AS_OF")
     if value:

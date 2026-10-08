@@ -1,6 +1,7 @@
 """End-to-end tool tests through a real MCP client connected in-process."""
 
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -113,7 +114,8 @@ async def test_calls_are_logged(client: Client, engine: Engine) -> None:
     assert last_two[0].result_summary.startswith("error: No SKU")
     assert last_two[1].result_summary.endswith("results")
     assert '"zone": "B"' in last_two[1].args_json
-    assert all(log.ts == AS_OF for log in last_two)
+    # Stamped with the real time, even though the warehouse clock is pinned to AS_OF.
+    assert all(abs(log.ts - datetime.now()) < timedelta(minutes=1) for log in last_two)
 
 
 async def test_create_replenishment_task_commits_a_proposed_task(

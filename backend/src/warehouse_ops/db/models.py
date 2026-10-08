@@ -205,12 +205,43 @@ class ReplenishmentTask(SQLModel, table=True):
     decided_at: NaiveDatetime | None = None
 
 
+class LogSource(StrEnum):
+    """Who made a logged call."""
+
+    CHAT = "CHAT"  # the in-app chat agent
+    INVESTIGATOR = "INVESTIGATOR"  # the cycle count investigator
+    MCP = "MCP"  # an MCP client such as Claude Desktop
+
+
+class ModelCallLog(SQLModel, table=True):
+    """One Claude request, with what it cost. Tool calls link to the request that asked for them.
+
+    ``cost_usd`` is computed when the row is written, so later price changes don't
+    rewrite history.
+    """
+
+    __tablename__ = "model_call_log"
+
+    id: int | None = Field(default=None, primary_key=True)
+    ts: NaiveDatetime
+    session_id: str = Field(index=True)
+    source: LogSource
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    duration_ms: int
+    stop_reason: str | None = None
+
+
 class ToolCallLog(SQLModel, table=True):
     __tablename__ = "tool_call_log"
 
     id: int | None = Field(default=None, primary_key=True)
     ts: NaiveDatetime
     session_id: str = Field(index=True)
+    source: LogSource = LogSource.MCP
+    model_call_id: int | None = Field(default=None, foreign_key="model_call_log.id", index=True)
     tool: str
     args_json: str
     result_summary: str
