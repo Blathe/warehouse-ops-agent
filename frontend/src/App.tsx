@@ -1,6 +1,7 @@
-import { MapPinIcon, PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { MapPinIcon, PauseIcon, PlayIcon, SearchIcon, Trash2Icon } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
+import { toast } from 'sonner'
 
 import { ActivityFeed } from '@/components/activity/ActivityFeed'
 import {
@@ -10,12 +11,15 @@ import {
   locationsInTurn,
   type ActivityItem,
 } from '@/components/activity/activity'
+import { notifyActivity } from '@/components/activity/notify'
 import { AgentLogPage } from '@/components/agentlog/AgentLogPage'
 import { Chat } from '@/components/chat/Chat'
 import { CycleCountsPage, type CountEvent } from '@/components/counts/CycleCountsPage'
 import { formatVariance } from '@/components/counts/status'
 import { FloorMapPage } from '@/components/floor/FloorMapPage'
 import { AppSidebar } from '@/components/layout/AppSidebar'
+import { CommandPalette } from '@/components/layout/CommandPalette'
+import { Page } from '@/components/layout/Page'
 import { PAGES } from '@/components/layout/pages'
 import { OverviewPage } from '@/components/overview/OverviewPage'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
@@ -25,6 +29,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import {
   getCycleCounts,
@@ -34,6 +39,7 @@ import {
   type AgentTurn,
   type ModelOption,
 } from '@/lib/api'
+import { SHORTCUT_LABEL } from '@/lib/shortcut'
 import { cn } from '@/lib/utils'
 
 const NAME_KEY = 'warehouse-ops.supervisor'
@@ -99,6 +105,12 @@ export default function App() {
   const [activeTasks, setActiveTasks] = useState<number | null>(null)
   const [openCounts, setOpenCounts] = useState<number | null>(null)
   const [simulating, setSimulating] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  // The page being shown, readable from callbacks that outlive the render that created them.
+  const pathnameRef = useRef(pathname)
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
 
   // useEffect runs after the first render; the empty [] means "only once", like an
   // OnInitializedAsync in Blazor. It loads the model list from the backend.
@@ -137,15 +149,16 @@ export default function App() {
       tickSimulation()
         .then(({ completed }) => {
           if (!completed) return
-          setActivity((current) => [...current, activityFromCompletion(completed)])
+          const item = activityFromCompletion(completed)
+          setActivity((current) => [...current, item])
+          notifyActivity(item)
           setMapVersion((version) => version + 1)
         })
         .catch((error: Error) => {
           setSimulating(false)
-          setActivity((current) => [
-            ...current,
-            activityNote('Crew simulation stopped', error.message, 'error'),
-          ])
+          const item = activityNote('Crew simulation stopped', error.message, 'error')
+          setActivity((current) => [...current, item])
+          notifyActivity(item)
         })
         .finally(() => {
           inFlight = false
@@ -165,7 +178,9 @@ export default function App() {
   // useCallback keeps the same function between renders (it only uses state setters), so
   // the page doesn't reload its counts every time the app re-renders.
   const handleCountEvent = useCallback((event: CountEvent) => {
-    setActivity((current) => [...current, countActivity(event)])
+    const item = countActivity(event)
+    setActivity((current) => [...current, item])
+    notifyActivity(item)
     if (event.kind !== 'investigated') setMapVersion((version) => version + 1)
   }, [])
 
@@ -177,7 +192,17 @@ export default function App() {
   // Called by the chat after every agent response: log what it did, point the map at
   // the bays involved (the move's destination first) and reload the map's stock.
   function handleTurn(turn: AgentTurn) {
-    setActivity((current) => [...current, ...activityFromTurn(turn)])
+    const items = activityFromTurn(turn)
+    setActivity((current) => [...current, ...items])
+    // Toast the outcome of a replenishment decision, and a nudge if the agent is waiting on
+    // an approval while the supervisor is on another page. Plain lookups stay quiet.
+    items.filter((item) => item.title.startsWith('Replenishment')).forEach(notifyActivity)
+    if (turn.pending.length > 0 && !pathnameRef.current.startsWith('/workspace')) {
+      toast.warning('The agent needs your approval', {
+        description: items.find((i) => i.title === 'Waiting for your approval')?.detail,
+        action: { label: 'Review', onClick: () => navigate('/workspace') },
+      })
+    }
     const locations = locationsInTurn(turn)
     setHighlight(locations)
     if (locations.length > 0) setSelectedBay(locations[0])
@@ -262,6 +287,17 @@ export default function App() {
                   ))}
                 </nav>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-muted-foreground"
+                aria-label="Open the command palette"
+                onClick={() => setPaletteOpen(true)}
+              >
+                <SearchIcon />
+                <span className="hidden sm:inline">Search</span>
+                <kbd className="hidden rounded border px-1 text-[10px] font-medium sm:inline">{SHORTCUT_LABEL}</kbd>
+              </Button>
               <ThemeToggle />
             </div>
           </header>
@@ -329,57 +365,65 @@ export default function App() {
             <Route
               path="/overview"
               element={
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <Page>
                   <OverviewPage onShowOnMap={showOnMap} refreshKey={mapVersion} />
-                </div>
+                </Page>
               }
             />
             <Route
               path="/floor-map"
               element={
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <Page>
                   <FloorMapPage
                     refreshKey={mapVersion}
                     highlight={highlight}
                     selected={selectedBay}
                     onSelect={setSelectedBay}
                   />
-                </div>
+                </Page>
               }
             />
             <Route
               path="/tasks"
               element={
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <Page>
                   <TasksPage onShowOnMap={showOnMap} refreshKey={mapVersion} />
-                </div>
+                </Page>
               }
             />
             <Route
               path="/counts"
               element={
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <Page>
                   <CycleCountsPage
                     supervisor={supervisor.trim() || 'Supervisor'}
                     onShowOnMap={showOnMap}
                     onChange={handleCountEvent}
                     refreshKey={mapVersion}
                   />
-                </div>
+                </Page>
               }
             />
             <Route
               path="/agent-log"
               element={
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <Page>
                   <AgentLogPage refreshKey={mapVersion} />
-                </div>
+                </Page>
               }
             />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
         </SidebarInset>
       </SidebarProvider>
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onShowOnMap={showOnMap}
+        simulating={simulating}
+        onToggleSimulation={() => setSimulating((on) => !on)}
+      />
+      <Toaster position="bottom-right" />
     </TooltipProvider>
   )
 }

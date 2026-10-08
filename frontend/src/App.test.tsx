@@ -307,6 +307,9 @@ describe('App crew simulation', () => {
     expect(ticks()).toBe(1)
     const activity = await screen.findByRole('list', { name: 'Agent activity' })
     expect(within(activity).getByText('Crew completed task #17')).toBeInTheDocument()
+    // ...and a toast tells the supervisor whichever page they are on.
+    const toasts = screen.getByRole('region', { name: /Notifications/ })
+    expect(await within(toasts).findByText('Crew completed task #17')).toBeInTheDocument()
     // The map reloads so the finished move shows up.
     const mapLoadsAfter = fetchMock.mock.calls.filter(([url]) => url === '/api/floor-map').length
     expect(mapLoadsAfter).toBeGreaterThan(mapLoadsBefore)
@@ -372,5 +375,89 @@ describe('App routing', () => {
   it('sends unknown URLs to the overview', async () => {
     renderApp('/nope')
     expect(await screen.findByRole('heading', { name: 'Overview', level: 1 })).toBeInTheDocument()
+  })
+})
+
+describe('App notifications', () => {
+  it('nudges the supervisor when the agent needs approval and they are on another page', async () => {
+    chatReply = {
+      conversation_id: 'conv_1',
+      model: 'claude-opus-5-5',
+      status: 'needs_approval',
+      reply: 'Refilling A-03-04-1.',
+      tool_calls: [],
+      pending: [
+        {
+          tool_use_id: 't1',
+          tool: 'create_replenishment_task',
+          input: { sku_code: '58368', from_location: 'A-03-06-2', to_location: 'A-03-04-1', qty: 144, reason: 'empty' },
+        },
+      ],
+    }
+    renderApp('/floor-map') // the chat stays mounted behind whatever page is showing
+    await userEvent.type(screen.getByLabelText('Message'), 'Refill it{Enter}')
+
+    const toasts = screen.getByRole('region', { name: /Notifications/ })
+    expect(await within(toasts).findByText('The agent needs your approval')).toBeInTheDocument()
+    await userEvent.click(within(toasts).getByRole('button', { name: 'Review' }))
+    expect(await screen.findByRole('heading', { name: 'Workspace', level: 1 })).toBeInTheDocument()
+  })
+
+  it('stays quiet about an approval request while the supervisor is in the workspace', async () => {
+    chatReply = {
+      conversation_id: 'conv_1',
+      model: 'claude-opus-5-5',
+      status: 'needs_approval',
+      reply: 'Refilling.',
+      tool_calls: [],
+      pending: [
+        {
+          tool_use_id: 't1',
+          tool: 'create_replenishment_task',
+          input: { sku_code: '58368', from_location: 'A-03-06-2', to_location: 'A-03-04-1', qty: 144, reason: 'empty' },
+        },
+      ],
+    }
+    renderApp()
+    await userEvent.type(screen.getByLabelText('Message'), 'Refill it{Enter}')
+    await screen.findByRole('button', { name: 'Approve' })
+
+    expect(screen.queryByText('The agent needs your approval')).not.toBeInTheDocument()
+  })
+})
+
+describe('App command palette', () => {
+  it('opens with Ctrl+K and jumps to a page', async () => {
+    renderApp()
+    await userEvent.keyboard('{Control>}k{/Control}')
+
+    await userEvent.type(await screen.findByPlaceholderText(/Go to a page/), 'cycle')
+    await userEvent.click(screen.getByRole('option', { name: 'Cycle counts' }))
+
+    expect(await screen.findByRole('heading', { name: 'Cycle counts', level: 1 })).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText(/Go to a page/)).not.toBeInTheDocument()
+  })
+
+  it('finds a pick face by SKU and shows it on the floor map', async () => {
+    renderApp()
+    await userEvent.click(screen.getByRole('button', { name: 'Open the command palette' }))
+
+    await userEvent.type(await screen.findByPlaceholderText(/Go to a page/), '58368')
+    await userEvent.click(await screen.findByRole('option', { name: /A-03-06-1/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Floor map', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^A-03-06-1/, pressed: true })).toBeInTheDocument()
+  })
+
+  it('switches the theme and the crew simulation', async () => {
+    renderApp()
+    await userEvent.keyboard('{Control>}k{/Control}')
+    await userEvent.click(await screen.findByRole('option', { name: 'Switch to dark mode' }))
+    expect(document.documentElement).toHaveClass('dark')
+    expect(screen.getByRole('button', { name: 'Switch to light mode' })).toBeInTheDocument()
+
+    await userEvent.keyboard('{Control>}k{/Control}')
+    await userEvent.click(await screen.findByRole('option', { name: 'Start the crew simulation' }))
+    expect(screen.getByRole('button', { name: /Simulate crew/ })).toHaveAttribute('aria-pressed', 'true')
   })
 })

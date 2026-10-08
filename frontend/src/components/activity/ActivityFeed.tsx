@@ -1,4 +1,7 @@
+import { ActivityIcon } from 'lucide-react'
+
 import type { ActivityItem, Tone } from '@/components/activity/activity'
+import { EmptyState } from '@/components/layout/EmptyState'
 import { cn } from '@/lib/utils'
 
 const DOT: Record<Tone, string> = {
@@ -12,9 +15,9 @@ const DOT: Record<Tone, string> = {
 export function ActivityFeed({ items }: { items: ActivityItem[] }) {
   if (items.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <EmptyState icon={ActivityIcon} title="No activity yet">
         Tool calls and approvals will show up here as you chat.
-      </p>
+      </EmptyState>
     )
   }
   return (

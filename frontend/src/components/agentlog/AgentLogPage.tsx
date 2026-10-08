@@ -1,4 +1,4 @@
-import { ChevronRightIcon, RefreshCwIcon } from 'lucide-react'
+import { ChevronRightIcon, FilterXIcon, RefreshCwIcon, ScrollTextIcon } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { StepList, ToolCallRow } from '@/components/agentlog/LogRows'
@@ -14,6 +14,7 @@ import {
   sourceLabel,
   startOfDay,
 } from '@/components/agentlog/format'
+import { EmptyState } from '@/components/layout/EmptyState'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -263,10 +264,9 @@ function SessionList({ sessions }: { sessions: SessionSummary[] | null }) {
   if (sessions === null) return <p className="text-sm text-muted-foreground">Loading sessions...</p>
   if (sessions.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Nothing logged yet. Chat with the agent or investigate a cycle count and it will show up
-        here.
-      </p>
+      <EmptyState icon={ScrollTextIcon} title="Nothing logged yet">
+        Chat with the agent or investigate a cycle count and it will show up here.
+      </EmptyState>
     )
   }
   return (
@@ -349,9 +349,9 @@ function CallList({
   if (calls === null) return <p className="text-sm text-muted-foreground">Loading calls...</p>
   if (calls.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-        No tool calls match these filters.
-      </p>
+      <EmptyState icon={FilterXIcon} title="No tool calls match these filters">
+        Try a wider date range or clear the tool filter.
+      </EmptyState>
     )
   }
   // Several calls can come from one request. Show its cost on the first one listed and mark

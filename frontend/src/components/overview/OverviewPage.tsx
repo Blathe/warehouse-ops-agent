@@ -1,10 +1,12 @@
-import { ArrowRightIcon, MapPinIcon, RefreshCwIcon } from 'lucide-react'
+import { ArrowRightIcon, CircleCheckBigIcon, MapPinIcon, RefreshCwIcon } from 'lucide-react'
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 
+import { EmptyState } from '@/components/layout/EmptyState'
 import { ShortPicksChart, ZoneHealthChart } from '@/components/overview/charts'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useCountUp } from '@/hooks/use-count-up'
 import { getOverview, type OverviewData, type UrgentNeed } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -80,9 +82,9 @@ export function OverviewPage({ onShowOnMap, refreshKey = 0 }: OverviewPageProps)
 
           <Panel title="Needs attention" hint="Pick faces to refill, most urgent first">
             {data.urgent_needs.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Nothing urgent. Every pick face that needs stock already has a task.
-              </p>
+              <EmptyState icon={CircleCheckBigIcon} title="Nothing urgent">
+                Every pick face that needs stock already has a task.
+              </EmptyState>
             ) : (
               <ul className="flex flex-col divide-y" aria-label="Urgent pick faces">
                 {data.urgent_needs.map((need) => (
@@ -126,6 +128,7 @@ function Tile({
   tone: keyof typeof TONE_DOT
   to: string
 }) {
+  const shown = useCountUp(value)
   return (
     <Link
       to={to}
@@ -136,7 +139,7 @@ function Tile({
         {label}
       </span>
       <span className="flex items-end justify-between">
-        <span className="text-3xl font-semibold tabular-nums">{value.toLocaleString()}</span>
+        <span className="text-3xl font-semibold tabular-nums">{shown.toLocaleString()}</span>
         <ArrowRightIcon
           aria-hidden
           className="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"

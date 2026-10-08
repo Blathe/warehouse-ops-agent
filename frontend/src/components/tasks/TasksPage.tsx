@@ -1,6 +1,7 @@
-import { ArrowRightIcon, MapPinIcon, RefreshCwIcon } from 'lucide-react'
+import { ArrowRightIcon, ListTodoIcon, MapPinIcon, RefreshCwIcon } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
+import { EmptyState } from '@/components/layout/EmptyState'
 import { formatTime, TASK_FILTERS, TASK_STATUS, zoneName } from '@/components/tasks/status'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -71,9 +72,9 @@ export function TasksPage({ onShowOnMap, refreshKey = 0 }: TasksPageProps) {
       ) : tasks === null ? (
         <p className="text-sm text-muted-foreground">Loading tasks...</p>
       ) : tasks.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <EmptyState icon={ListTodoIcon} title="No tasks here">
           {EMPTY_TEXT[filter]}
-        </p>
+        </EmptyState>
       ) : (
         <ul className="flex flex-col gap-3" aria-label="Tasks">
           {tasks.map((task) => (
