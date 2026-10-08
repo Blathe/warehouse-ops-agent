@@ -76,9 +76,23 @@ const activeTasks = [
 // What the next simulation ticks answer (a Response is returned as is); empty means "nothing waiting".
 let tickReplies: unknown[] = []
 
+const overview = {
+  as_of: '2026-06-01T13:00:00',
+  empty_faces: 0,
+  low_faces: 0,
+  short_picks_24h: 0,
+  tasks_awaiting_approval: 0,
+  tasks_approved: 0,
+  open_discrepancies: 0,
+  zones: [],
+  short_picks_by_hour: [],
+  urgent_needs: [],
+}
+
 const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
   if (url === '/api/models') return json(models)
   if (url === '/api/floor-map') return json(floorMap)
+  if (url === '/api/overview') return json(overview)
   if (url.startsWith('/api/tasks')) return json(activeTasks)
   if (url.startsWith('/api/cycle-counts')) return json([])
   if (url === '/api/simulation/tick') {
@@ -318,10 +332,10 @@ describe('App crew simulation', () => {
 })
 
 describe('App routing', () => {
-  it('opens the workspace from the root URL', async () => {
+  it('opens the overview from the root URL', async () => {
     renderApp('/')
-    expect(await screen.findByRole('heading', { name: 'Workspace', level: 1 })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Workspace' })).toHaveAttribute('data-active', 'true')
+    expect(await screen.findByRole('heading', { name: 'Overview', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('data-active', 'true')
   })
 
   it('opens a page straight from its URL', async () => {
@@ -330,8 +344,8 @@ describe('App routing', () => {
     expect(screen.getByRole('button', { name: 'Simulate cycle count' })).toBeInTheDocument()
   })
 
-  it('sends unknown URLs to the workspace', async () => {
+  it('sends unknown URLs to the overview', async () => {
     renderApp('/nope')
-    expect(await screen.findByRole('heading', { name: 'Workspace', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Overview', level: 1 })).toBeInTheDocument()
   })
 })

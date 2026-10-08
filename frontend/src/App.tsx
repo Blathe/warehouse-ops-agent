@@ -16,6 +16,7 @@ import { formatVariance } from '@/components/counts/status'
 import { FloorMap } from '@/components/floor/FloorMap'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { PAGES } from '@/components/layout/pages'
+import { OverviewPage } from '@/components/overview/OverviewPage'
 import { ThemeToggle } from '@/components/layout/ThemeToggle'
 import { ModelPicker } from '@/components/ModelPicker'
 import { TasksPage } from '@/components/tasks/TasksPage'
@@ -332,8 +333,16 @@ export default function App() {
 
           {/* The other pages mount only while shown, so they load fresh each time. */}
           <Routes>
-            <Route path="/" element={<Navigate to="/workspace" replace />} />
+            <Route path="/" element={<Navigate to="/overview" replace />} />
             <Route path="/workspace" element={null} />
+            <Route
+              path="/overview"
+              element={
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  <OverviewPage onShowOnMap={showOnMap} refreshKey={mapVersion} />
+                </div>
+              }
+            />
             <Route
               path="/tasks"
               element={
@@ -355,7 +364,7 @@ export default function App() {
                 </div>
               }
             />
-            <Route path="*" element={<Navigate to="/workspace" replace />} />
+            <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>
         </SidebarInset>
       </SidebarProvider>
