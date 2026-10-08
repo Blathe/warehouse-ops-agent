@@ -132,7 +132,9 @@ describe('App model picker', () => {
     await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
 
     expect(await screen.findByText('Cheap answer.')).toBeInTheDocument()
-    expect(screen.getByText('Claude Haiku 4.5')).toBeInTheDocument()
+    expect(
+      screen.getByText('Claude Haiku 4.5', { selector: '[data-slot="message-footer"]' }),
+    ).toBeInTheDocument()
     const chatCall = fetchMock.mock.calls.find(([url]) => url === '/api/chat')
     expect(JSON.parse(chatCall?.[1]?.body as string).model).toBe('claude-haiku-4-5')
     expect(localStorage.getItem('warehouse-ops.model')).toBe('claude-haiku-4-5')

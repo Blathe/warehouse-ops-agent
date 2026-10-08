@@ -1,13 +1,14 @@
-import { ArrowUpIcon } from 'lucide-react'
+import { ArrowUpIcon, BotIcon, SquarePenIcon } from 'lucide-react'
 import { useState, type FormEvent, type KeyboardEvent } from 'react'
 
+import { formatCost } from '@/components/agentlog/format'
 import { ApprovalCard } from '@/components/chat/ApprovalCard'
 import { Markdown } from '@/components/chat/Markdown'
 import { ToolCalls } from '@/components/chat/ToolCalls'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
-import { Message, MessageContent, MessageFooter } from '@/components/ui/message'
+import { Message, MessageAvatar, MessageContent, MessageFooter } from '@/components/ui/message'
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -19,6 +20,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  getSessionSteps,
   sendApproval,
   sendChat,
   type AgentTurn,
@@ -58,6 +60,7 @@ export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [cost, setCost] = useState<number | null>(null) // USD spent on this conversation so far
 
   const awaitingApproval = entries.some((e) => e.pending.length > 0)
 
@@ -75,6 +78,19 @@ export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps)
       model: modelLabels[turn.model] ?? turn.model,
     })
     onTurn?.(turn)
+    // Cost is logged per Claude request in the Agent log; add up this conversation's requests.
+    getSessionSteps(turn.conversation_id)
+      .then((steps) => setCost(steps.reduce((sum, s) => sum + (s.model_call?.cost_usd ?? 0), 0)))
+      .catch(() => {
+        // The strip just keeps its last figure.
+      })
+  }
+
+  function newChat() {
+    setEntries([])
+    setConversationId(null)
+    setDraft('')
+    setCost(null)
   }
 
   async function run(request: () => Promise<AgentTurn>) {
@@ -119,6 +135,27 @@ export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-11 shrink-0 items-center gap-3 border-b px-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <BotIcon className="size-3.5" aria-hidden />
+          {model ? (modelLabels[model] ?? model) : 'Default model'}
+        </span>
+        {cost !== null && (
+          <span className="tabular-nums" aria-label={`Cost of this chat: ${formatCost(cost)}`}>
+            {formatCost(cost)} this chat
+          </span>
+        )}
+        <Button
+          variant="ghost"
+          size="xs"
+          className="ml-auto"
+          disabled={entries.length === 0 || busy}
+          onClick={newChat}
+        >
+          <SquarePenIcon />
+          New chat
+        </Button>
+      </div>
       <MessageScrollerProvider>
         <MessageScroller>
           <MessageScrollerViewport>
@@ -126,7 +163,7 @@ export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps)
               {entries.length === 0 && <EmptyState onPick={send} />}
               {entries.map((entry) => (
                 <MessageScrollerItem key={entry.id} scrollAnchor={entry.role === 'user'}>
-                  <EntryView entry={entry} busy={busy} onDecide={decide} />
+                  <EntryView entry={entry} busy={busy} supervisor={supervisor} onDecide={decide} />
                 </MessageScrollerItem>
               ))}
               {busy && (
@@ -173,16 +210,29 @@ export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps)
 function EntryView({
   entry,
   busy,
+  supervisor,
   onDecide,
 }: {
   entry: Entry
   busy: boolean
+  supervisor: string
   onDecide: (approve: boolean) => void
 }) {
   const align = entry.role === 'user' ? 'end' : 'start'
   const variant = entry.role === 'user' ? 'default' : entry.role === 'error' ? 'destructive' : 'muted'
   return (
     <Message align={align}>
+      {entry.role !== 'error' && (
+        <MessageAvatar className="size-7 min-w-7 self-start">
+          {entry.role === 'user' ? (
+            <span aria-hidden className="text-xs font-medium">
+              {supervisor.charAt(0).toUpperCase()}
+            </span>
+          ) : (
+            <BotIcon aria-hidden className="size-4 text-primary" />
+          )}
+        </MessageAvatar>
+      )}
       <MessageContent>
         {entry.text && (
           // Replies are markdown (the model writes tables and lists) and get the full width;
