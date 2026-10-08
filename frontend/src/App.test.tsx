@@ -231,7 +231,7 @@ describe('App tasks page', () => {
     expect(await screen.findByRole('heading', { name: 'Replenishment tasks' })).toBeInTheDocument()
     expect(await screen.findByRole('listitem', { name: 'Task #17' })).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('link', { name: 'Workspace' }))
+    await userEvent.click(screen.getByRole('link', { name: 'Chat' }))
     expect(screen.getByText('Cheap answer.')).toBeInTheDocument()
   })
 
@@ -412,7 +412,7 @@ describe('App notifications', () => {
     const toasts = screen.getByRole('region', { name: /Notifications/ })
     expect(await within(toasts).findByText('The agent needs your approval')).toBeInTheDocument()
     await userEvent.click(within(toasts).getByRole('button', { name: 'Review' }))
-    expect(await screen.findByRole('heading', { name: 'Workspace', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Chat', level: 1 })).toBeInTheDocument()
   })
 
   it('stays quiet about an approval request while the supervisor is in the workspace', async () => {
