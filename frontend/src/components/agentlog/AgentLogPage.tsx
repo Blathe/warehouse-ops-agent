@@ -102,7 +102,7 @@ export function AgentLogPage({ refreshKey = 0 }: AgentLogPageProps) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+    <div className="flex w-full flex-col gap-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">Agent log</h2>

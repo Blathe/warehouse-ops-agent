@@ -33,6 +33,7 @@ from warehouse_ops.services import agent_log, cycle_counts, replenishment_tasks
 from warehouse_ops.services.cycle_counts import CycleCountOut, CycleCountRun
 from warehouse_ops.services.errors import NotFoundError, RuleViolationError
 from warehouse_ops.services.floor_map import FloorMap, get_floor_map
+from warehouse_ops.services.overview import Overview, get_overview
 from warehouse_ops.services.replenishment import OPEN_REPLENISHMENT_STATUSES
 from warehouse_ops.services.schemas import ReplenishmentTaskOut
 
@@ -132,6 +133,11 @@ def create_app(
     def floor_map() -> FloorMap:
         with readonly_session(engine) as session:
             return get_floor_map(session)
+
+    @app.get("/api/overview")
+    def overview() -> Overview:
+        with readonly_session(engine) as session:
+            return get_overview(session, now=now())
 
     @app.get("/api/tasks")
     def tasks(status: TaskFilter = "active") -> list[ReplenishmentTaskOut]:

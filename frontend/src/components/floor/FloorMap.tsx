@@ -2,16 +2,10 @@ import { RefreshCwIcon } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 
 import { BayDetails } from '@/components/floor/BayDetails'
-import { STATUS_STYLES } from '@/components/floor/status'
+import { STATUS_STYLES, ZONE_NAMES } from '@/components/floor/status'
 import { Button } from '@/components/ui/button'
 import { getFloorMap, type Bay, type FloorMapData, type PickStatus } from '@/lib/api'
 import { cn } from '@/lib/utils'
-
-const ZONE_NAMES: Record<string, string> = {
-  A: 'Zone A: small tackle',
-  B: 'Zone B: rods & reels',
-  C: 'Zone C: bulky gear',
-}
 
 // Groups bays into rows: one row per aisle, bays left to right.
 function aisles(bays: Bay[]): { zone: string; aisle: number; bays: Bay[] }[] {

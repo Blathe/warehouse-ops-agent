@@ -126,6 +126,46 @@ export function getFloorMap(): Promise<FloorMapData> {
   return request('/api/floor-map')
 }
 
+// Mirrors Overview in backend/src/warehouse_ops/services/overview.py.
+export interface ZoneHealth {
+  zone: string
+  ok: number
+  low: number
+  empty: number
+  unassigned: number
+  short_picks: number // in the last 24 hours
+}
+
+export interface UrgentNeed {
+  location: string
+  zone: string
+  sku_code: string
+  description: string
+  on_hand: number
+  min_qty: number
+  max_qty: number
+  open_demand: number
+  reasons: string[]
+  suggested_qty: number
+}
+
+export interface OverviewData {
+  as_of: string
+  empty_faces: number
+  low_faces: number
+  short_picks_24h: number
+  tasks_awaiting_approval: number
+  tasks_approved: number
+  open_discrepancies: number
+  zones: ZoneHealth[]
+  short_picks_by_hour: { hour_start: string; short_picks: number }[] // oldest first
+  urgent_needs: UrgentNeed[]
+}
+
+export function getOverview(): Promise<OverviewData> {
+  return request('/api/overview')
+}
+
 export type TaskStatus = 'PROPOSED' | 'APPROVED' | 'REJECTED' | 'DONE'
 export type TaskFilter = 'active' | 'done' | 'rejected' | 'all'
 

@@ -7,3 +7,9 @@ export const STATUS_STYLES: Record<PickStatus, { label: string; cell: string }> 
   ok: { label: 'OK', cell: 'bg-status-ok' },
   unassigned: { label: 'No SKU slotted', cell: 'bg-muted' },
 }
+
+export const ZONE_NAMES: Record<string, string> = {
+  A: 'Zone A: small tackle',
+  B: 'Zone B: rods & reels',
+  C: 'Zone C: bulky gear',
+}
