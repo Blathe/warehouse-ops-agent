@@ -1,6 +1,7 @@
 import { MapPinIcon, PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
+import { toast } from 'sonner'
 
 import { ActivityFeed } from '@/components/activity/ActivityFeed'
 import {
@@ -10,6 +11,7 @@ import {
   locationsInTurn,
   type ActivityItem,
 } from '@/components/activity/activity'
+import { notifyActivity } from '@/components/activity/notify'
 import { AgentLogPage } from '@/components/agentlog/AgentLogPage'
 import { Chat } from '@/components/chat/Chat'
 import { CycleCountsPage, type CountEvent } from '@/components/counts/CycleCountsPage'
@@ -25,6 +27,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
+import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import {
   getCycleCounts,
@@ -99,6 +102,11 @@ export default function App() {
   const [activeTasks, setActiveTasks] = useState<number | null>(null)
   const [openCounts, setOpenCounts] = useState<number | null>(null)
   const [simulating, setSimulating] = useState(false)
+  // The page being shown, readable from callbacks that outlive the render that created them.
+  const pathnameRef = useRef(pathname)
+  useEffect(() => {
+    pathnameRef.current = pathname
+  }, [pathname])
 
   // useEffect runs after the first render; the empty [] means "only once", like an
   // OnInitializedAsync in Blazor. It loads the model list from the backend.
@@ -137,15 +145,16 @@ export default function App() {
       tickSimulation()
         .then(({ completed }) => {
           if (!completed) return
-          setActivity((current) => [...current, activityFromCompletion(completed)])
+          const item = activityFromCompletion(completed)
+          setActivity((current) => [...current, item])
+          notifyActivity(item)
           setMapVersion((version) => version + 1)
         })
         .catch((error: Error) => {
           setSimulating(false)
-          setActivity((current) => [
-            ...current,
-            activityNote('Crew simulation stopped', error.message, 'error'),
-          ])
+          const item = activityNote('Crew simulation stopped', error.message, 'error')
+          setActivity((current) => [...current, item])
+          notifyActivity(item)
         })
         .finally(() => {
           inFlight = false
@@ -165,7 +174,9 @@ export default function App() {
   // useCallback keeps the same function between renders (it only uses state setters), so
   // the page doesn't reload its counts every time the app re-renders.
   const handleCountEvent = useCallback((event: CountEvent) => {
-    setActivity((current) => [...current, countActivity(event)])
+    const item = countActivity(event)
+    setActivity((current) => [...current, item])
+    notifyActivity(item)
     if (event.kind !== 'investigated') setMapVersion((version) => version + 1)
   }, [])
 
@@ -177,7 +188,17 @@ export default function App() {
   // Called by the chat after every agent response: log what it did, point the map at
   // the bays involved (the move's destination first) and reload the map's stock.
   function handleTurn(turn: AgentTurn) {
-    setActivity((current) => [...current, ...activityFromTurn(turn)])
+    const items = activityFromTurn(turn)
+    setActivity((current) => [...current, ...items])
+    // Toast the outcome of a replenishment decision, and a nudge if the agent is waiting on
+    // an approval while the supervisor is on another page. Plain lookups stay quiet.
+    items.filter((item) => item.title.startsWith('Replenishment')).forEach(notifyActivity)
+    if (turn.pending.length > 0 && !pathnameRef.current.startsWith('/workspace')) {
+      toast.warning('The agent needs your approval', {
+        description: items.find((i) => i.title === 'Waiting for your approval')?.detail,
+        action: { label: 'Review', onClick: () => navigate('/workspace') },
+      })
+    }
     const locations = locationsInTurn(turn)
     setHighlight(locations)
     if (locations.length > 0) setSelectedBay(locations[0])
@@ -380,6 +401,7 @@ export default function App() {
           </Routes>
         </SidebarInset>
       </SidebarProvider>
+      <Toaster position="bottom-right" />
     </TooltipProvider>
   )
 }

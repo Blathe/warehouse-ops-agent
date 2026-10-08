@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react'
+
 export type Theme = 'light' | 'dark'
 
 export const THEME_KEY = 'warehouse-ops.theme'
@@ -26,4 +28,19 @@ export function applyTheme(theme: Theme, remember = true): void {
   } catch {
     // Not remembered between visits, which is fine.
   }
+}
+
+// The theme currently on the page, kept up to date when the toggle flips the `dark` class.
+// (useSyncExternalStore is React's way to read state that lives outside React, here the
+// <html> element's class list.)
+export function useCurrentTheme(): Theme {
+  return useSyncExternalStore(
+    (onChange) => {
+      const observer = new MutationObserver(onChange)
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+      return () => observer.disconnect()
+    },
+    () => (document.documentElement.classList.contains('dark') ? 'dark' : 'light'),
+    () => 'light',
+  )
 }
