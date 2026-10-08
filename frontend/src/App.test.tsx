@@ -145,16 +145,15 @@ describe('App model picker', () => {
   })
 })
 
-describe('App two-column layout', () => {
-  it('shows the chat, floor map and activity together', async () => {
+describe('App workspace', () => {
+  it('shows the chat and the agent activity side by side', async () => {
     renderApp()
     expect(screen.getByRole('region', { name: 'Chat' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Floor map' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Agent activity' })).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: /^A-03-04-1/ })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Floor map' })).not.toBeInTheDocument()
   })
 
-  it('logs the agent turn and points the map at the bay being replenished', async () => {
+  it('logs the agent turn and offers to show the bay being replenished on the floor map', async () => {
     chatReply = {
       conversation_id: 'conv_1',
       model: 'claude-opus-5-5',
@@ -177,10 +176,29 @@ describe('App two-column layout', () => {
     const activity = await screen.findByRole('list', { name: 'Agent activity' })
     expect(within(activity).getByText('Waiting for your approval')).toBeInTheDocument()
     expect(within(activity).getByText('Checked replenishment needs')).toBeInTheDocument()
-    // The destination bay is selected and its details are shown.
+
+    // The destination bay is selected and highlighted on the floor map page.
+    await userEvent.click(screen.getByRole('button', { name: 'Show A-03-04-1 on the floor map' }))
+    expect(await screen.findByRole('heading', { name: 'Floor map', level: 1 })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: /^A-03-04-1/, pressed: true })).toBeInTheDocument()
-    // The map reloads after the turn.
-    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/floor-map').length).toBeGreaterThan(1)
+  })
+})
+
+describe('App floor map page', () => {
+  it('opens from its URL and shows the map with the zone filter', async () => {
+    renderApp('/floor-map')
+    expect(await screen.findByRole('heading', { name: 'Floor map', level: 1 })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^A-03-04-1/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All zones' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('reloads the map after an agent turn', async () => {
+    renderApp()
+    await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
+    await screen.findByText('Cheap answer.')
+    await userEvent.click(screen.getByRole('link', { name: 'Floor map' }))
+    await screen.findByRole('button', { name: /^A-03-04-1/ })
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/floor-map').length).toBeGreaterThanOrEqual(1)
   })
 })
 
@@ -203,7 +221,7 @@ describe('App tasks page', () => {
     expect(screen.getByText('Cheap answer.')).toBeInTheDocument()
   })
 
-  it('shows a task on the map and returns to the workspace', async () => {
+  it('shows a task on the floor map page', async () => {
     renderApp()
     await userEvent.click(screen.getByRole('link', { name: /^Tasks/ }))
     const card = await screen.findByRole('listitem', { name: 'Task #17' })
@@ -211,6 +229,7 @@ describe('App tasks page', () => {
     await userEvent.click(within(card).getByRole('button', { name: 'Show on map' }))
 
     expect(screen.queryByRole('heading', { name: 'Replenishment tasks' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Floor map', level: 1 })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: /^A-03-06-1/, pressed: true })).toBeInTheDocument()
   })
 })
@@ -267,7 +286,7 @@ describe('App crew simulation', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     tickReplies = [{ completed: { ...activeTasks[0], status: 'DONE' } }]
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    renderApp()
+    renderApp('/floor-map') // the map is on show, so it should reload when a task finishes
     const toggle = screen.getByRole('button', { name: /Simulate crew/ })
 
     await user.click(toggle)

@@ -1,4 +1,4 @@
-import { PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react'
+import { MapPinIcon, PauseIcon, PlayIcon, Trash2Icon } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 
@@ -14,7 +14,7 @@ import { AgentLogPage } from '@/components/agentlog/AgentLogPage'
 import { Chat } from '@/components/chat/Chat'
 import { CycleCountsPage, type CountEvent } from '@/components/counts/CycleCountsPage'
 import { formatVariance } from '@/components/counts/status'
-import { FloorMap } from '@/components/floor/FloorMap'
+import { FloorMapPage } from '@/components/floor/FloorMapPage'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { PAGES } from '@/components/layout/pages'
 import { OverviewPage } from '@/components/overview/OverviewPage'
@@ -91,7 +91,7 @@ export default function App() {
   const [model, setModel] = useState<string | null>(null)
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const [view, setView] = useState<'chat' | 'map'>('chat') // only used on narrow screens
+  const [view, setView] = useState<'chat' | 'activity'>('chat') // only used on narrow screens
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [highlight, setHighlight] = useState<string[]>([])
   const [selectedBay, setSelectedBay] = useState<string | null>(null)
@@ -158,8 +158,7 @@ export default function App() {
   function showOnMap(location: string) {
     setHighlight([location])
     setSelectedBay(location)
-    setView('map')
-    navigate('/workspace')
+    navigate('/floor-map')
   }
 
   // From the Cycle counts page: log it and refresh the map, whose bays show open counts.
@@ -250,7 +249,7 @@ export default function App() {
             <div className="ml-auto flex items-center gap-1">
               {onWorkspace && (
                 <nav className="flex gap-1 lg:hidden" aria-label="View">
-                  {(['chat', 'map'] as const).map((v) => (
+                  {(['chat', 'activity'] as const).map((v) => (
                     <Button
                       key={v}
                       size="sm"
@@ -258,7 +257,7 @@ export default function App() {
                       aria-pressed={view === v}
                       onClick={() => setView(v)}
                     >
-                      {v === 'chat' ? 'Chat' : 'Floor map'}
+                      {v === 'chat' ? 'Chat' : 'Activity'}
                     </Button>
                   ))}
                 </nav>
@@ -268,14 +267,14 @@ export default function App() {
           </header>
 
           {/* The workspace stays mounted (just hidden) on other pages, so the conversation
-              survives moving around the app. Large screens: chat and the right-hand column share
-              the width 50/50. Narrow screens show chat or map one at a time. */}
+              survives moving around the app. Large screens: chat on the left, the agent's
+              activity in a column on the right. Narrow screens show one at a time. */}
           <div className={cn('flex min-h-0 flex-1', !onWorkspace && 'hidden')}>
             <section
               aria-label="Chat"
               className={cn(
-                'min-h-0 flex-col lg:flex lg:w-1/2 lg:shrink-0 lg:border-r',
-                view === 'chat' ? 'flex flex-1 lg:flex-none' : 'hidden',
+                'min-h-0 flex-1 flex-col lg:flex',
+                view === 'chat' ? 'flex' : 'hidden',
               )}
             >
               <Chat
@@ -285,50 +284,41 @@ export default function App() {
                 onTurn={handleTurn}
               />
             </section>
-            {/* On narrow screens this column scrolls as one page; on large screens the map scrolls
-                on its own and the activity panel keeps a fixed height underneath. */}
             <aside
+              aria-labelledby="activity-heading"
               className={cn(
-                'min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex lg:overflow-hidden',
-                view === 'map' ? 'flex' : 'hidden',
+                'min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-y-auto p-4 lg:w-96 lg:flex-none lg:shrink-0 lg:border-l',
+                view === 'activity' ? 'flex' : 'hidden lg:flex',
               )}
             >
-              <section
-                aria-labelledby="floor-map-heading"
-                className="flex flex-col gap-3 p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
-              >
-                <h2 id="floor-map-heading" className="text-sm font-semibold">
-                  Floor map
+              <div className="flex items-center justify-between gap-2">
+                <h2 id="activity-heading" className="text-sm font-semibold">
+                  Agent activity
                 </h2>
-                <FloorMap
-                  refreshKey={mapVersion}
-                  highlight={highlight}
-                  selected={selectedBay}
-                  onSelect={setSelectedBay}
-                />
-              </section>
-              <section
-                aria-labelledby="activity-heading"
-                className="flex flex-col gap-3 border-t p-4 lg:h-64 lg:shrink-0 lg:overflow-y-auto"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <h2 id="activity-heading" className="text-sm font-semibold">
-                    Agent activity
-                  </h2>
-                  {activity.length > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      aria-label="Clear agent activity"
-                      onClick={() => setActivity([])}
-                    >
-                      <Trash2Icon />
-                      Clear
-                    </Button>
-                  )}
-                </div>
-                <ActivityFeed items={activity} />
-              </section>
+                {activity.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    aria-label="Clear agent activity"
+                    onClick={() => setActivity([])}
+                  >
+                    <Trash2Icon />
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {highlight.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  onClick={() => showOnMap(highlight[0])}
+                >
+                  <MapPinIcon />
+                  Show {highlight[0]} on the floor map
+                </Button>
+              )}
+              <ActivityFeed items={activity} />
             </aside>
           </div>
 
@@ -341,6 +331,19 @@ export default function App() {
               element={
                 <div className="min-h-0 flex-1 overflow-y-auto p-4">
                   <OverviewPage onShowOnMap={showOnMap} refreshKey={mapVersion} />
+                </div>
+              }
+            />
+            <Route
+              path="/floor-map"
+              element={
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                  <FloorMapPage
+                    refreshKey={mapVersion}
+                    highlight={highlight}
+                    selected={selectedBay}
+                    onSelect={setSelectedBay}
+                  />
                 </div>
               }
             />
