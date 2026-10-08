@@ -26,6 +26,7 @@ The second problem is **inventory that drifts** from what the system says: a man
 - **Switchable models.** Chat with Claude Opus 5.5, Sonnet 5.5, or Haiku 4.5 from the UI.
 - **Also works as an MCP server**, so the same tools can be used from Claude Desktop ([setup](docs/claude-desktop.md)).
 - **Workspace.** Chat on the left and an activity feed of everything the agent did on the right. After each reply the floor map highlights the bays the agent is working on, one click away. An **Overview** page is the landing page, and a **Tasks** page lists every replenishment task.
+- **Quick navigation.** Press **Ctrl+K** (⌘K on a Mac) to jump to a page, flip dark mode, start the crew simulation or find a pick face by location, SKU or product name. Toasts report approvals, finished crew tasks and cycle counts wherever you are in the app.
 
 ### Cycle Count Investigator
 
