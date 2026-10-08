@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { AgentTurn } from '@/lib/api'
+import type { AgentStep, AgentTurn } from '@/lib/api'
 import { Chat } from './Chat'
 
 function turn(overrides: Partial<AgentTurn>): AgentTurn {
@@ -21,8 +21,21 @@ function turn(overrides: Partial<AgentTurn>): AgentTurn {
 // by URL. Anything else not listed is a 404, so these never use up a scripted chat response.
 let sideRoutes: Record<string, unknown> = {}
 
-// Replaces window.fetch with scripted JSON responses and records the requests.
-function mockFetch(...responses: Array<{ status?: number; body: unknown }>) {
+const step = (overrides: Partial<AgentStep>): AgentStep => ({
+  type: 'tool_start',
+  tool: null,
+  input: null,
+  ok: null,
+  summary: null,
+  ...overrides,
+})
+
+// One server-sent event.
+const sse = (name: string, data: unknown) => `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`
+
+// Replaces window.fetch with scripted responses and records the requests. A 200 answers with
+// an event stream (any `steps` first, then the turn), anything else with a plain JSON error.
+function mockFetch(...responses: Array<{ status?: number; body: unknown; steps?: AgentStep[] }>) {
   const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
     if (url.startsWith('/api/agent-log') || url.startsWith('/api/floor-map')) {
       return url in sideRoutes
@@ -31,7 +44,11 @@ function mockFetch(...responses: Array<{ status?: number; body: unknown }>) {
     }
     const next = responses.shift()
     if (!next) throw new Error('unexpected fetch')
-    return new Response(JSON.stringify(next.body), { status: next.status ?? 200 })
+    if (next.status && next.status !== 200) {
+      return new Response(JSON.stringify(next.body), { status: next.status })
+    }
+    const steps = (next.steps ?? []).map((s) => sse('step', s)).join('')
+    return new Response(steps + sse('turn', next.body))
   })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -100,7 +117,7 @@ describe('Chat', () => {
     expect(await screen.findByText('13 faces need stock.')).toBeInTheDocument()
     expect(screen.getByText('What needs replenishing?')).toBeInTheDocument()
     expect(screen.getByText('1 tool call')).toBeInTheDocument()
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/chat')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/chat/stream')
     expect(requestBody(fetchMock, 0)).toEqual({
       message: 'What needs replenishing?',
       conversation_id: null,
@@ -122,7 +139,7 @@ describe('Chat', () => {
     expect(screen.getByText('claude-opus-5-5 · Approved by Pat')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
     const approval = fetchMock.mock.calls.findIndex(
-      ([url]) => url === '/api/conversations/conv_1/approval',
+      ([url]) => url === '/api/conversations/conv_1/approval/stream',
     )
     expect(approval).toBeGreaterThan(0)
     expect(requestBody(fetchMock, approval)).toEqual({ approve: true, decided_by: 'Pat' })
@@ -171,7 +188,7 @@ describe('Chat', () => {
     await userEvent.type(screen.getByLabelText('Message'), 'second{Enter}')
 
     expect(await screen.findByText('Two.')).toBeInTheDocument()
-    const chatCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/chat')
+    const chatCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/chat/stream')
     expect(JSON.parse(chatCalls[1][1]?.body as string).conversation_id).toBeNull()
   })
 
@@ -181,5 +198,69 @@ describe('Chat', () => {
     await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
     await screen.findByText('Hi Pat.')
     expect(screen.getByText('P')).toBeInTheDocument() // the supervisor's initial
+  })
+
+  it('shows what the agent is doing as it works, then the reply', async () => {
+    // A response whose body we feed by hand, so the test can look at the screen mid-stream.
+    let controller!: ReadableStreamDefaultController<string>
+    const body = new ReadableStream<string>({ start: (c) => (controller = c) }).pipeThrough(
+      new TextEncoderStream(),
+    )
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      url.startsWith('/api/agent-log') ? new Response('{}', { status: 404 }) : new Response(body),
+    ))
+    render(<Chat supervisor="Pat" model={null} />)
+    await userEvent.type(screen.getByLabelText('Message'), 'What is short in A?{Enter}')
+
+    const progress = await screen.findByRole('list', { name: 'Agent progress' })
+    expect(progress).toHaveTextContent('Thinking...')
+
+    controller.enqueue(sse('step', step({ type: 'thinking' })))
+    controller.enqueue(
+      sse('step', step({ tool: 'list_replenishment_needs', input: { zone: 'A' } })),
+    )
+    expect(await screen.findByText('Checking replenishment needs in zone A')).toBeInTheDocument()
+    expect(screen.queryByText('Thinking...')).not.toBeInTheDocument()
+
+    controller.enqueue(
+      sse('step', step({ type: 'tool_end', tool: 'list_replenishment_needs', ok: true, summary: '13 results' })),
+    )
+    expect(await screen.findByLabelText('done')).toBeInTheDocument()
+    expect(screen.getByText('Thinking...')).toBeInTheDocument() // back to waiting on Claude
+
+    controller.enqueue(sse('turn', turn({ reply: '13 faces need stock.' })))
+    controller.close()
+    expect(await screen.findByText('13 faces need stock.')).toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Agent progress' })).not.toBeInTheDocument()
+  })
+
+  it('marks a failed tool call and shows an error event from the stream', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      url.startsWith('/api/agent-log')
+        ? new Response('{}', { status: 404 })
+        : new Response(
+            sse('step', step({ tool: 'find_stock', input: { sku_code: '1' } })) +
+              sse('step', step({ type: 'tool_end', tool: 'find_stock', ok: false, summary: 'error: no SKU' })) +
+              sse('error', { status: 502, detail: 'Could not reach the Claude API' }),
+          ),
+    ))
+    render(<Chat supervisor="Pat" model={null} />)
+
+    await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
+
+    expect(await screen.findByText('Could not reach the Claude API')).toBeInTheDocument()
+  })
+
+  it('fails clearly when the stream ends without a result', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      url.startsWith('/api/agent-log') ? new Response('{}', { status: 404 }) : new Response(''),
+    ))
+    render(<Chat supervisor="Pat" model={null} />)
+
+    await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
+
+    expect(
+      await screen.findByText('The connection closed before the agent finished'),
+    ).toBeInTheDocument()
   })
 })

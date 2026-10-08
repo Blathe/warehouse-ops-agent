@@ -1,13 +1,13 @@
-import { ArrowUpIcon, BotIcon, SquarePenIcon } from 'lucide-react'
+import { ArrowUpIcon, BotIcon, CheckIcon, SquarePenIcon, XIcon } from 'lucide-react'
 import { useState, type FormEvent, type KeyboardEvent } from 'react'
 
+import { describeRunning } from '@/components/activity/activity'
 import { formatCost } from '@/components/agentlog/format'
 import { ApprovalCard } from '@/components/chat/ApprovalCard'
 import { Markdown } from '@/components/chat/Markdown'
 import { ToolCalls } from '@/components/chat/ToolCalls'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
-import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
 import { Message, MessageAvatar, MessageContent, MessageFooter } from '@/components/ui/message'
 import {
   MessageScroller,
@@ -21,8 +21,9 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import {
   getSessionSteps,
-  sendApproval,
-  sendChat,
+  streamApproval,
+  streamChat,
+  type AgentStep,
   type AgentTurn,
   type PendingAction,
   type ToolTrace,
@@ -51,6 +52,13 @@ const SUGGESTIONS = [
   'Refill the empty pick faces in zone B.',
 ]
 
+// One line in the live progress list while the agent works.
+interface StepLine {
+  id: number
+  label: string
+  state: 'running' | 'done' | 'failed'
+}
+
 let nextId = 1
 
 export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps) {
@@ -60,6 +68,7 @@ export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [steps, setSteps] = useState<StepLine[]>([]) // what the agent is doing right now
   const [cost, setCost] = useState<number | null>(null) // USD spent on this conversation so far
 
   const awaitingApproval = entries.some((e) => e.pending.length > 0)
@@ -93,10 +102,29 @@ export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps)
     setCost(null)
   }
 
-  async function run(request: () => Promise<AgentTurn>) {
+  // Folds one streamed event into the progress list: a tool starting adds a running line, its
+  // end marks the last matching running line done or failed. "thinking" needs no line of its
+  // own, since the list always ends with a "Thinking..." marker while busy.
+  function onStep(step: AgentStep) {
+    if (step.type === 'tool_start' && step.tool) {
+      const label = describeRunning(step.tool, step.input ?? {})
+      setSteps((current) => [...current, { id: nextId++, label, state: 'running' }])
+    } else if (step.type === 'tool_end') {
+      setSteps((current) => {
+        const index = current.findLastIndex((line) => line.state === 'running')
+        if (index === -1) return current
+        return current.map((line, i) =>
+          i === index ? { ...line, state: step.ok ? 'done' : 'failed' } : line,
+        )
+      })
+    }
+  }
+
+  async function run(request: (onStep: (step: AgentStep) => void) => Promise<AgentTurn>) {
     setBusy(true)
+    setSteps([])
     try {
-      addTurn(await request())
+      addTurn(await request(onStep))
     } catch (error) {
       add({ role: 'error', text: (error as Error).message, toolCalls: [], pending: [] })
     } finally {
@@ -109,7 +137,7 @@ export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps)
     if (!message || busy || awaitingApproval) return
     add({ role: 'user', text: message, toolCalls: [], pending: [] })
     setDraft('')
-    void run(() => sendChat(message, conversationId, model))
+    void run((onStep) => streamChat(message, conversationId, model, onStep))
   }
 
   function decide(approve: boolean) {
@@ -118,7 +146,7 @@ export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps)
     setEntries((current) =>
       current.map((e) => (e.pending.length ? { ...e, pending: [], decision } : e)),
     )
-    void run(() => sendApproval(conversationId, approve, supervisor))
+    void run((onStep) => streamApproval(conversationId, approve, supervisor, onStep))
   }
 
   function onSubmit(event: FormEvent) {
@@ -168,12 +196,29 @@ export function Chat({ supervisor, model, modelLabels = {}, onTurn }: ChatProps)
               ))}
               {busy && (
                 <MessageScrollerItem>
-                  <Marker role="status">
-                    <MarkerIcon>
-                      <Spinner />
-                    </MarkerIcon>
-                    <MarkerContent>Checking the warehouse...</MarkerContent>
-                  </Marker>
+                  <ul aria-label="Agent progress" aria-live="polite" className="flex flex-col gap-1.5">
+                    {steps.map((line) => (
+                      <li
+                        key={line.id}
+                        className="flex items-center gap-2 text-sm text-muted-foreground"
+                      >
+                        {line.state === 'running' ? (
+                          <Spinner className="size-4" />
+                        ) : line.state === 'done' ? (
+                          <CheckIcon aria-label="done" className="size-4 text-status-ok-ink" />
+                        ) : (
+                          <XIcon aria-label="failed" className="size-4 text-status-empty-ink" />
+                        )}
+                        {line.label}
+                      </li>
+                    ))}
+                    {steps.every((line) => line.state !== 'running') && (
+                      <li className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Spinner className="size-4" />
+                        Thinking...
+                      </li>
+                    )}
+                  </ul>
                 </MessageScrollerItem>
               )}
             </MessageScrollerContent>

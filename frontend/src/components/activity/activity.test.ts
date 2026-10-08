@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { AgentTurn, ToolTrace } from '@/lib/api'
-import { activityFromTurn, describeToolCall, locationsInTurn } from './activity'
+import { activityFromTurn, describeRunning, describeToolCall, locationsInTurn } from './activity'
 
 const move = {
   sku_code: '58368',
@@ -79,5 +79,15 @@ describe('locationsInTurn', () => {
       }),
     )
     expect(locations).toEqual(['A-03-04-1', 'A-03-06-1'])
+  })
+})
+
+describe('describeRunning', () => {
+  it('words a tool in progress for a supervisor', () => {
+    expect(describeRunning('list_replenishment_needs', { zone: 'A' })).toBe(
+      'Checking replenishment needs in zone A',
+    )
+    expect(describeRunning('find_stock', { sku_code: '58368' })).toBe('Finding stock for SKU 58368')
+    expect(describeRunning('something_new', {})).toBe('Running something_new')
   })
 })
