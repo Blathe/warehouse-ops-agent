@@ -169,7 +169,7 @@ backend/src/warehouse_ops/
   api/          FastAPI app for the front end
   evals/        eval runner and scoring for both suites
 backend/evals/  eval cases (cases.yaml, investigations.yaml) and run reports
-frontend/       React app: chat, approval cards, tool traces, floor map, Tasks and Cycle counts pages
+frontend/       React app: chat, approval cards, tool traces, floor map, Tasks, Cycle counts and Agent log pages
 docs/           product spec and Claude Desktop setup
 Dockerfile      one image for the React app, API and agent (SQLite)
 ```

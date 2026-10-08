@@ -22,6 +22,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session, col, select
 
 from warehouse_ops.agent.investigator import Investigator
+from warehouse_ops.agent.pricing import cost_usd
 from warehouse_ops.db.models import (
     InventoryTxn,
     InvestigationStatus,
@@ -34,7 +35,7 @@ from warehouse_ops.db.models import (
     TxnType,
 )
 from warehouse_ops.evals.cases import Facts, placeholders, resolve_values
-from warehouse_ops.evals.common import AS_OF, Meter, MeteredClient, cost_usd, seeded_engine
+from warehouse_ops.evals.common import AS_OF, Meter, MeteredClient, seeded_engine
 from warehouse_ops.services.cycle_counts import (
     Cause,
     InvestigationOut,

@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -16,6 +17,8 @@ from warehouse_ops.agent.loop import (
 from warehouse_ops.agent.models import DEFAULT_MODEL
 from warehouse_ops.db.models import (
     Approval,
+    LogSource,
+    ModelCallLog,
     ReplenishmentStatus,
     ReplenishmentTask,
     ToolCallLog,
@@ -128,6 +131,58 @@ def test_write_waits_for_approval_then_creates_an_approved_task(engine: Engine) 
     (result,) = tool_results(client.messages.requests[1])
     assert json.loads(result["content"])["status"] == "APPROVED"
     assert logs(engine)[-1].approval == Approval.APPROVED
+
+
+def model_calls(engine: Engine) -> list[ModelCallLog]:
+    with Session(engine) as session:
+        return list(session.exec(select(ModelCallLog)).all())
+
+
+def test_each_model_call_is_logged_with_cost_and_linked_to_its_tool_calls(
+    engine: Engine,
+) -> None:
+    client = FakeClient(
+        tool_reply(
+            ("tu_1", "list_replenishment_needs", {"zone": "A"}),
+            ("tu_2", "list_replenishment_needs", {"zone": "B"}),
+        ),
+        text_reply("Done."),
+    )
+    conversation = Conversation()
+    make_agent(engine, client).send(conversation, "What needs refilling?")
+
+    first, second = model_calls(engine)
+    assert (first.session_id, first.source) == (conversation.id, LogSource.CHAT)
+    assert (first.model, first.input_tokens, first.output_tokens) == (DEFAULT_MODEL, 10, 10)
+    assert first.cost_usd == pytest.approx((10 * 4 + 10 * 20) / 1e6)
+    assert (first.stop_reason, second.stop_reason) == ("tool_use", "end_turn")
+    calls = logs(engine)
+    assert [c.model_call_id for c in calls] == [first.id, first.id]  # parallel calls share it
+    assert all(c.source == LogSource.CHAT for c in calls)
+    # Log rows carry the real time, not the (here pinned) warehouse clock.
+    stamps = [first.ts, second.ts, *(c.ts for c in calls)]
+    assert all(abs(ts - datetime.now()) < timedelta(minutes=1) for ts in stamps)
+
+
+def test_approved_and_rejected_writes_link_to_the_model_call_that_asked(
+    engine: Engine,
+) -> None:
+    for approve, expected in ((True, Approval.APPROVED), (False, Approval.REJECTED)):
+        engine = make_memory_engine()
+        seed_database(engine, seed=42, as_of=AS_OF)
+        client = FakeClient(
+            tool_reply(("tu_1", "create_replenishment_task", create_args(engine))),
+            text_reply("Ok."),
+        )
+        agent = make_agent(engine, client)
+        conversation = Conversation()
+        agent.send(conversation, "Refill it")
+        agent.resolve(conversation, approve=approve, decided_by="Pat")
+
+        asked, _ = model_calls(engine)
+        (call,) = logs(engine)
+        assert call.approval == expected and call.model_call_id == asked.id
+        assert conversation.pending_model_call_id is None
 
 
 def test_rejection_writes_nothing_and_tells_claude(engine: Engine) -> None:

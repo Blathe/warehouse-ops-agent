@@ -91,7 +91,9 @@ npm test && npm run lint && npm run typecheck
   (`tests/db/test_history.py` has the check).
 - **`shelf_variance` is hidden truth**: only the cycle count simulation and the evals read it;
   never expose it through a tool, prompt or API response.
-- **Log every tool call** (tool, args, result summary, duration, approval decision) to the `tool_call_log` table.
+- **Log every tool call** (tool, args, result summary, duration, approval decision) to the `tool_call_log` table,
+  and every Claude request (model, tokens, cost) to `model_call_log`. The Agent log page reads both; keep
+  `shelf_variance` out of them (`tests/api/test_app.py` checks).
 - **Seeded fake data is deterministic** (fixed random seed) so tests and evals are reproducible.
 - **Secrets** come from `.env` (see `.env.example`); never commit keys.
 - Add a dependency only in the PR that first uses it.

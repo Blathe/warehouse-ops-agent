@@ -54,7 +54,8 @@ and the agent answers from live data, then proposes replenishment moves that the
   status (`OPEN` / `PICKED` / `SHORT`), completed_at
 - **replenishment_task**: id, sku_id, from_location_id, to_location_id, lpn, qty, reason,
   status (`PROPOSED` / `APPROVED` / `REJECTED` / `DONE`), created_by, approved_by, created_at, decided_at
-- **tool_call_log**: id, ts, session_id, tool, args_json, result_summary, duration_ms, approval (`n/a` / `approved` / `rejected`)
+- **tool_call_log**: id, ts, session_id, source (`CHAT` / `INVESTIGATOR` / `MCP`), model_call_id, tool, args_json, result_summary, duration_ms, approval (`n/a` / `approved` / `rejected`)
+- **model_call_log**: id, ts, session_id, source, model, input_tokens, output_tokens, cost_usd, duration_ms, stop_reason (one row per Claude request; a tool call links to the request that asked for it, so parallel calls share one cost)
 
 **Seed data** (deterministic, Faker with a fixed seed): ~300 fishing SKUs built from
 brand × category × variant word lists (e.g. "Shad Crankbait 2in Firetiger", "7ft Medium Spinning Rod",

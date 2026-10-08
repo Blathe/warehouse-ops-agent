@@ -9,6 +9,7 @@ The conversation history is append-only: each response's content goes back exact
 as Claude returned it (thinking blocks included).
 """
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -28,8 +29,8 @@ from warehouse_ops import clock
 from warehouse_ops.agent.execution import ToolTrace, execute_tool_call
 from warehouse_ops.agent.models import DEFAULT_MODEL, is_supported, request_options
 from warehouse_ops.agent.tools import TOOLS, ToolContext
-from warehouse_ops.db.models import Approval
-from warehouse_ops.tool_log import WAREHOUSE_CONTEXT, record_tool_call
+from warehouse_ops.db.models import Approval, LogSource
+from warehouse_ops.tool_log import WAREHOUSE_CONTEXT, record_model_call, record_tool_call
 
 MAX_TOKENS = 16000
 MAX_STEPS = 12  # model calls per user message, a guard against runaway loops
@@ -84,6 +85,8 @@ class Conversation:
     # While waiting for approval: the write calls, and results of reads from the same turn.
     pending_calls: list[BetaToolUseBlock] = field(default_factory=list)
     pending_results: list[BetaToolResultBlockParam] = field(default_factory=list)
+    # The model call that asked for the pending writes, so their log rows link to its cost.
+    pending_model_call_id: int | None = None
     # Can change between messages. Thinking blocks from another model are simply
     # ignored by the API, so switching mid-conversation is safe.
     model: str = DEFAULT_MODEL
@@ -130,11 +133,13 @@ class Agent:
                 results.append(self._reject(conversation, call, decided_by, traces))
         conversation.pending_calls = []
         conversation.pending_results = []
+        conversation.pending_model_call_id = None
         conversation.messages.append({"role": "user", "content": results})
         return self._run(conversation, traces)
 
     def _run(self, conversation: Conversation, traces: list[ToolTrace]) -> AgentTurn:
         for _ in range(MAX_STEPS):
+            started = time.perf_counter()
             response = self._client.beta.messages.create(
                 model=conversation.model,
                 max_tokens=MAX_TOKENS,
@@ -142,6 +147,16 @@ class Agent:
                 tools=TOOL_PARAMS,
                 messages=conversation.messages,
                 **request_options(conversation.model),
+            )
+            model_call_id = record_model_call(
+                self._engine,
+                session_id=conversation.id,
+                source=LogSource.CHAT,
+                model=conversation.model,
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+                duration_ms=round((time.perf_counter() - started) * 1000),
+                stop_reason=response.stop_reason,
             )
             text = "\n".join(b.text for b in response.content if b.type == "text").strip()
 
@@ -164,11 +179,14 @@ class Agent:
                     writes.append(call)
                 else:
                     ctx = ToolContext(now=self._now())
-                    results.append(self._execute(conversation, call, ctx, traces))
+                    results.append(
+                        self._execute(conversation, call, ctx, traces, model_call_id=model_call_id)
+                    )
 
             if writes:
                 conversation.pending_calls = writes
                 conversation.pending_results = results
+                conversation.pending_model_call_id = model_call_id
                 pending = [
                     PendingAction(tool_use_id=c.id, tool=c.name, input=dict(c.input))
                     for c in writes
@@ -191,9 +209,17 @@ class Agent:
         ctx: ToolContext,
         traces: list[ToolTrace],
         approval: Approval = Approval.NOT_APPLICABLE,
+        model_call_id: int | None = None,
     ) -> BetaToolResultBlockParam:
         block, trace = execute_tool_call(
-            self._engine, TOOLS, call, ctx, session_id=conversation.id, approval=approval
+            self._engine,
+            TOOLS,
+            call,
+            ctx,
+            session_id=conversation.id,
+            source=LogSource.CHAT,
+            model_call_id=model_call_id or conversation.pending_model_call_id,
+            approval=approval,
         )
         traces.append(trace)
         return block
@@ -209,13 +235,14 @@ class Agent:
         args = dict(call.input)
         record_tool_call(
             self._engine,
-            ts=self._now(),
             session_id=conversation.id,
             tool=call.name,
             args=args,
             summary=summary,
             duration_ms=0,
             approval=Approval.REJECTED,
+            source=LogSource.CHAT,
+            model_call_id=conversation.pending_model_call_id,
         )
         traces.append(
             ToolTrace(

@@ -14,7 +14,7 @@ from warehouse_ops.agent.investigator import (
     TOOL_PARAMS,
     Investigator,
 )
-from warehouse_ops.db.models import InvestigationStatus, ToolCallLog
+from warehouse_ops.db.models import InvestigationStatus, LogSource, ModelCallLog, ToolCallLog
 from warehouse_ops.db.seed import seed_database
 from warehouse_ops.services.cycle_counts import CycleCountOut, simulate_cycle_count
 
@@ -131,3 +131,21 @@ def test_failures_are_recorded_not_raised(engine: Engine, client: FakeClient, er
     result = investigator.run(investigation_id)
     assert result.status == InvestigationStatus.FAILED
     assert result.error is not None and error in result.error
+
+
+def test_model_calls_are_logged_with_cost_and_linked_to_tool_calls(engine: Engine) -> None:
+    count = open_discrepancy(engine)
+    client = FakeClient(
+        tool_reply(("tu_1", "get_inventory_history", {"location": "A-02-23-1"})),
+        tool_reply(("tu_2", "submit_findings", FINDINGS)),
+    )
+    investigator, investigation_id = start(engine, client, count)
+    investigator.run(investigation_id)
+
+    with Session(engine) as session:
+        first, second = session.exec(select(ModelCallLog)).all()
+        (call,) = session.exec(select(ToolCallLog)).all()
+    assert first.session_id == f"investigation:{investigation_id}"
+    assert first.source == LogSource.INVESTIGATOR and first.cost_usd > 0
+    assert second.stop_reason == "tool_use"
+    assert (call.source, call.model_call_id) == (LogSource.INVESTIGATOR, first.id)

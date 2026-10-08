@@ -9,7 +9,6 @@ from anthropic import Anthropic
 from sqlalchemy import Engine
 from sqlalchemy.pool import StaticPool
 
-from warehouse_ops.agent.models import MODEL_OPTIONS
 from warehouse_ops.db.engine import BACKEND_DIR, get_engine
 from warehouse_ops.db.seed import seed_database
 
@@ -65,8 +64,3 @@ class MeteredClient:
 
     def as_anthropic(self) -> Anthropic:
         return cast(Anthropic, self)
-
-
-def cost_usd(model: str, input_tokens: int, output_tokens: int) -> float:
-    option = next(m for m in MODEL_OPTIONS if m.id == model)
-    return (input_tokens * option.input_per_mtok + output_tokens * option.output_per_mtok) / 1e6

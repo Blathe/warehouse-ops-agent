@@ -28,8 +28,8 @@ from warehouse_ops.agent.investigator import Investigator
 from warehouse_ops.agent.loop import Agent, AgentStateError, AgentTurn, Conversation
 from warehouse_ops.agent.models import DEFAULT_MODEL, MODEL_OPTIONS, ModelOption, is_supported
 from warehouse_ops.db.engine import BACKEND_DIR, get_engine, readonly_session
-from warehouse_ops.db.models import CountStatus, ReplenishmentStatus
-from warehouse_ops.services import cycle_counts, replenishment_tasks
+from warehouse_ops.db.models import Approval, CountStatus, LogSource, ReplenishmentStatus
+from warehouse_ops.services import agent_log, cycle_counts, replenishment_tasks
 from warehouse_ops.services.cycle_counts import CycleCountOut, CycleCountRun
 from warehouse_ops.services.errors import NotFoundError, RuleViolationError
 from warehouse_ops.services.floor_map import FloorMap, get_floor_map
@@ -137,6 +137,62 @@ def create_app(
     def tasks(status: TaskFilter = "active") -> list[ReplenishmentTaskOut]:
         with readonly_session(engine) as session:
             return replenishment_tasks.list_replenishment_tasks(session, TASK_FILTERS[status])
+
+    @app.get("/api/agent-log")
+    def agent_log_entries(
+        session_id: str | None = None,
+        tool: str | None = None,
+        source: LogSource | None = None,
+        approval: Approval | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        before_id: int | None = None,
+        limit: int = agent_log.DEFAULT_LIMIT,
+    ) -> list[agent_log.ToolCallEntry]:
+        """Tool calls, newest first; pass the last id as before_id for the next page."""
+        with readonly_session(engine) as session:
+            return agent_log.list_tool_calls(
+                session,
+                session_id=session_id,
+                tool=tool,
+                source=source,
+                approval=approval,
+                since=since,
+                until=until,
+                before_id=before_id,
+                limit=limit,
+            )
+
+    @app.get("/api/agent-log/summary")
+    def agent_log_summary(
+        source: LogSource | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> agent_log.LogSummary:
+        """Total cost and counts; with no filters, everything in the log."""
+        with readonly_session(engine) as session:
+            return agent_log.summarize_log(session, source=source, since=since, until=until)
+
+    @app.get("/api/agent-log/sessions")
+    def agent_log_sessions(
+        source: LogSource | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        limit: int = agent_log.DEFAULT_LIMIT,
+        offset: int = 0,
+    ) -> list[agent_log.SessionSummary]:
+        with readonly_session(engine) as session:
+            return agent_log.list_sessions(
+                session, source=source, since=since, until=until, limit=limit, offset=offset
+            )
+
+    @app.get("/api/agent-log/sessions/{session_id}")
+    def agent_log_session(session_id: str) -> list[agent_log.LogStep]:
+        with readonly_session(engine) as session:
+            steps = agent_log.get_session_steps(session, session_id)
+        if not steps:
+            raise HTTPException(404, f"No session {session_id!r} in the log")
+        return steps
 
     @app.post("/api/simulation/tick")
     def simulation_tick() -> TickResponse:
