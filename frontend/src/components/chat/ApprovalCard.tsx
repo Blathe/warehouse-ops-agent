@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react'
+
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -7,7 +9,8 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import type { PendingAction } from '@/lib/api'
+import { getFloorMap, type Bay, type PendingAction } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 interface ApprovalCardProps {
   actions: PendingAction[]
@@ -60,6 +63,89 @@ function ActionDetails({ action }: { action: PendingAction }) {
       </dd>
       <dt className="text-muted-foreground">Reason</dt>
       <dd>{String(input.reason)}</dd>
+      <dd className="col-span-2 mt-1">
+        <MoveImpact
+          from={String(input.from_location)}
+          to={String(input.to_location)}
+          qty={Number(input.qty)}
+        />
+      </dd>
     </dl>
+  )
+}
+
+// What the move does to the stock: the pick face fills up and the reserve pallet shrinks.
+// The numbers come from the floor map; if they can't be loaded the card simply omits this.
+function MoveImpact({ from, to, qty }: { from: string; to: string; qty: number }) {
+  const [bays, setBays] = useState<Bay[] | null>(null)
+
+  useEffect(() => {
+    getFloorMap()
+      .then((map) => setBays(map.bays))
+      .catch(() => setBays(null))
+  }, [])
+
+  const face = bays?.find((b) => b.pick.location === to)?.pick
+  const pallet = bays?.flatMap((b) => b.reserve).find((r) => r.location === from)
+  if (!face || !pallet || face.max_qty === null) return null
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border bg-background/60 p-3">
+      <StockChange
+        label={`Pick face ${to}`}
+        before={face.on_hand}
+        after={face.on_hand + qty}
+        scale={face.max_qty}
+        tone="bg-status-ok"
+      />
+      <StockChange
+        label={`Reserve ${from}`}
+        before={pallet.qty}
+        after={pallet.qty - qty}
+        scale={pallet.qty}
+        tone="bg-status-task"
+      />
+    </div>
+  )
+}
+
+// A bar showing the stock before the move, with the part that changes shaded: added stock in
+// the colour, removed stock as a faded stripe.
+function StockChange({
+  label,
+  before,
+  after,
+  scale,
+  tone,
+}: {
+  label: string
+  before: number
+  after: number
+  scale: number
+  tone: string
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-medium tabular-nums">
+          {before} → {after}
+        </span>
+      </div>
+      <div
+        role="img"
+        aria-label={`${label}: ${before} before, ${after} after`}
+        className="relative flex h-2 overflow-hidden rounded-full bg-muted"
+      >
+        <div
+          className={cn('h-full', tone)}
+          style={{ width: `${(Math.min(before, after) / scale) * 100}%` }}
+        />
+        <div
+          className={cn('h-full', after > before ? tone : 'bg-foreground/15', after > before && 'opacity-50')}
+          style={{ width: `${(Math.abs(after - before) / scale) * 100}%` }}
+        />
+      </div>
+    </div>
   )
 }

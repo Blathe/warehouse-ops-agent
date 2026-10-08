@@ -17,9 +17,18 @@ function turn(overrides: Partial<AgentTurn>): AgentTurn {
   }
 }
 
+// Answers for the read-only lookups the chat makes on the side (conversation cost, stock levels),
+// by URL. Anything else not listed is a 404, so these never use up a scripted chat response.
+let sideRoutes: Record<string, unknown> = {}
+
 // Replaces window.fetch with scripted JSON responses and records the requests.
 function mockFetch(...responses: Array<{ status?: number; body: unknown }>) {
-  const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => {
+  const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+    if (url.startsWith('/api/agent-log') || url.startsWith('/api/floor-map')) {
+      return url in sideRoutes
+        ? new Response(JSON.stringify(sideRoutes[url]))
+        : new Response('{}', { status: 404 })
+    }
     const next = responses.shift()
     if (!next) throw new Error('unexpected fetch')
     return new Response(JSON.stringify(next.body), { status: next.status ?? 200 })
@@ -44,7 +53,10 @@ const pendingMove = {
   },
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  sideRoutes = {}
+})
 
 describe('Chat', () => {
   it('renders the assistant reply as markdown but leaves what you typed alone', async () => {
@@ -109,8 +121,11 @@ describe('Chat', () => {
     expect(await screen.findByText('Task #18 is approved.')).toBeInTheDocument()
     expect(screen.getByText('claude-opus-5-5 · Approved by Pat')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument()
-    expect(fetchMock.mock.calls[1][0]).toBe('/api/conversations/conv_1/approval')
-    expect(requestBody(fetchMock, 1)).toEqual({ approve: true, decided_by: 'Pat' })
+    const approval = fetchMock.mock.calls.findIndex(
+      ([url]) => url === '/api/conversations/conv_1/approval',
+    )
+    expect(approval).toBeGreaterThan(0)
+    expect(requestBody(fetchMock, approval)).toEqual({ approve: true, decided_by: 'Pat' })
   })
 
   it('blocks new messages while a task is waiting for approval', async () => {
@@ -126,5 +141,45 @@ describe('Chat', () => {
     render(<Chat supervisor="Pat" model={null} />)
     await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
     expect(await screen.findByText('Could not reach the Claude API')).toBeInTheDocument()
+  })
+
+  it('shows the model, this chat’s running cost and starts a new chat', async () => {
+    sideRoutes['/api/agent-log/sessions/conv_1'] = [
+      { model_call: { cost_usd: 0.0123 }, tool_calls: [] },
+      { model_call: { cost_usd: 0.0200 }, tool_calls: [] },
+    ]
+    mockFetch({ body: turn({ reply: 'Hello there.' }) })
+    render(<Chat supervisor="Pat" model="claude-haiku-4-5" modelLabels={{ 'claude-haiku-4-5': 'Claude Haiku 4.5' }} />)
+    expect(screen.getByText('Claude Haiku 4.5')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'New chat' })).toBeDisabled()
+
+    await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
+
+    expect(await screen.findByText('$0.0323 this chat')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'New chat' }))
+    expect(screen.queryByText('Hello there.')).not.toBeInTheDocument()
+    expect(screen.queryByText(/this chat/)).not.toBeInTheDocument()
+  })
+
+  it('starts a fresh conversation after New chat', async () => {
+    const fetchMock = mockFetch({ body: turn({ reply: 'One.' }) }, { body: turn({ conversation_id: 'conv_2', reply: 'Two.' }) })
+    render(<Chat supervisor="Pat" model={null} />)
+    await userEvent.type(screen.getByLabelText('Message'), 'first{Enter}')
+    await screen.findByText('One.')
+
+    await userEvent.click(screen.getByRole('button', { name: 'New chat' }))
+    await userEvent.type(screen.getByLabelText('Message'), 'second{Enter}')
+
+    expect(await screen.findByText('Two.')).toBeInTheDocument()
+    const chatCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/chat')
+    expect(JSON.parse(chatCalls[1][1]?.body as string).conversation_id).toBeNull()
+  })
+
+  it('marks who said what with an avatar', async () => {
+    mockFetch({ body: turn({ reply: 'Hi Pat.' }) })
+    render(<Chat supervisor="pat" model={null} />)
+    await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
+    await screen.findByText('Hi Pat.')
+    expect(screen.getByText('P')).toBeInTheDocument() // the supervisor's initial
   })
 })
