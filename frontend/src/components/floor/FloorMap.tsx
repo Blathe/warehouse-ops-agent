@@ -68,16 +68,16 @@ export function FloorMap({ refreshKey = 0, highlight = [], selected, onSelect }:
             </li>
           ))}
           <li className="flex items-center gap-1.5">
-            <span className="size-3 rounded-sm ring-2 ring-blue-500 ring-inset" />
+            <span className="size-3 rounded-sm ring-2 ring-status-task ring-inset" />
             Open task
           </li>
           <li className="flex items-center gap-1.5">
-            <span className="size-3 rounded-sm outline-2 outline-offset-1 outline-violet-500" />
+            <span className="size-3 rounded-sm outline-2 outline-offset-1 outline-status-agent" />
             Agent is working here
           </li>
           <li className="flex items-center gap-1.5">
             <span className="relative size-3 rounded-sm bg-muted">
-              <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-orange-500" />
+              <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-status-count" />
             </span>
             Open count discrepancy
           </li>
@@ -169,15 +169,15 @@ function BayCell({
       className={cn(
         'relative aspect-square w-full rounded-sm transition-transform hover:scale-125 focus-visible:outline-2 focus-visible:outline-ring',
         STATUS_STYLES[pick.status].cell,
-        pick.open_task_id && 'ring-2 ring-blue-500 ring-inset',
-        highlighted && 'animate-pulse outline-2 outline-offset-1 outline-violet-500',
+        pick.open_task_id && 'ring-2 ring-status-task ring-inset',
+        highlighted && 'animate-pulse outline-2 outline-offset-1 outline-status-agent',
         selected && 'scale-125 outline-2 outline-foreground',
       )}
     >
       {bay.open_discrepancies.length > 0 && (
         <span
           aria-hidden
-          className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-orange-500 ring-1 ring-background"
+          className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-status-count ring-1 ring-background"
         />
       )}
     </button>

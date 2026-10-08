@@ -4,15 +4,15 @@ import type { TaskFilter, TaskStatus } from '@/lib/api'
 export const TASK_STATUS: Record<TaskStatus, { label: string; badge: string }> = {
   PROPOSED: {
     label: 'Awaiting approval',
-    badge: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+    badge: 'bg-status-low-soft text-status-low-ink',
   },
   APPROVED: {
     label: 'Approved',
-    badge: 'bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-200',
+    badge: 'bg-status-task-soft text-status-task-ink',
   },
   DONE: {
     label: 'Done',
-    badge: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
+    badge: 'bg-status-ok-soft text-status-ok-ink',
   },
   REJECTED: { label: 'Rejected', badge: 'bg-muted text-muted-foreground' },
 }

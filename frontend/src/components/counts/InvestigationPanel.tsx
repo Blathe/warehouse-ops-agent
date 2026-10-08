@@ -8,8 +8,8 @@ import type { Cause, Investigation } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 const LIKELIHOOD: Record<Cause['likelihood'], { label: string; badge: string }> = {
-  high: { label: 'Likely', badge: 'bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200' },
-  medium: { label: 'Possible', badge: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200' },
+  high: { label: 'Likely', badge: 'bg-status-count-soft text-status-count-ink' },
+  medium: { label: 'Possible', badge: 'bg-status-low-soft text-status-low-ink' },
   low: { label: 'Unlikely', badge: 'bg-muted text-muted-foreground' },
 }
 
@@ -48,7 +48,7 @@ export function InvestigationPanel({ investigation, defaultOpen, onRetry }: Inve
     <Collapsible defaultOpen={defaultOpen} className="rounded-lg bg-muted/60 px-3 py-2 text-sm">
       <CollapsibleTrigger className="group flex w-full items-center gap-1.5 text-left font-medium">
         <ChevronRightIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
-        <SparklesIcon className="size-3.5 shrink-0 text-violet-500" />
+        <SparklesIcon className="size-3.5 shrink-0 text-status-agent" />
         AI investigation
       </CollapsibleTrigger>
       <CollapsibleContent className="flex flex-col gap-3 pt-2">

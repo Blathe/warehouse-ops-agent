@@ -4,15 +4,15 @@ import type { CountFilter, CountStatus } from '@/lib/api'
 export const COUNT_STATUS: Record<CountStatus, { label: string; badge: string }> = {
   DISCREPANCY: {
     label: 'Discrepancy',
-    badge: 'bg-orange-100 text-orange-900 dark:bg-orange-950 dark:text-orange-200',
+    badge: 'bg-status-count-soft text-status-count-ink',
   },
   RECOUNT_REQUESTED: {
     label: 'Recount requested',
-    badge: 'bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-200',
+    badge: 'bg-status-low-soft text-status-low-ink',
   },
   ACCEPTED: {
     label: 'Accepted',
-    badge: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200',
+    badge: 'bg-status-ok-soft text-status-ok-ink',
   },
   RECOUNTED: { label: 'Recounted', badge: 'bg-muted text-muted-foreground' },
   MATCHED: { label: 'Matched', badge: 'bg-muted text-muted-foreground' },

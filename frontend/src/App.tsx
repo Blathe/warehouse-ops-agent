@@ -17,6 +17,7 @@ import { formatVariance } from '@/components/counts/status'
 import { FloorMap } from '@/components/floor/FloorMap'
 import { AppSidebar } from '@/components/layout/AppSidebar'
 import { PAGES } from '@/components/layout/pages'
+import { ThemeToggle } from '@/components/layout/ThemeToggle'
 import { ModelPicker } from '@/components/ModelPicker'
 import { TasksPage } from '@/components/tasks/TasksPage'
 import { Button } from '@/components/ui/button'
@@ -197,12 +198,12 @@ export default function App() {
             '/tasks': {
               count: activeTasks ?? 0,
               label: `${activeTasks} active`,
-              className: 'rounded-full bg-blue-600 px-1.5 text-[11px] leading-4 text-white',
+              className: 'rounded-full bg-status-task px-1.5 text-[11px] leading-4 text-white',
             },
             '/counts': {
               count: openCounts ?? 0,
               label: `${openCounts} open`,
-              className: 'rounded-full bg-orange-500 px-1.5 text-[11px] leading-4 text-white',
+              className: 'rounded-full bg-status-count px-1.5 text-[11px] leading-4 text-neutral-950',
             },
           }}
           footer={
@@ -218,7 +219,7 @@ export default function App() {
                 {simulating ? <PauseIcon /> : <PlayIcon />}
                 Simulate crew
                 {simulating && (
-                  <span aria-hidden className="ml-auto size-2 animate-pulse rounded-full bg-emerald-500" />
+                  <span aria-hidden className="ml-auto size-2 animate-pulse rounded-full bg-status-ok" />
                 )}
               </Button>
               {model && models.length > 0 && (
@@ -245,21 +246,24 @@ export default function App() {
             <SidebarTrigger />
             <Separator orientation="vertical" className="mr-1 h-4" />
             <h1 className="text-sm font-semibold">{pageTitle}</h1>
-            {onWorkspace && (
-              <nav className="ml-auto flex gap-1 lg:hidden" aria-label="View">
-                {(['chat', 'map'] as const).map((v) => (
-                  <Button
-                    key={v}
-                    size="sm"
-                    variant={view === v ? 'secondary' : 'ghost'}
-                    aria-pressed={view === v}
-                    onClick={() => setView(v)}
-                  >
-                    {v === 'chat' ? 'Chat' : 'Floor map'}
-                  </Button>
-                ))}
-              </nav>
-            )}
+            <div className="ml-auto flex items-center gap-1">
+              {onWorkspace && (
+                <nav className="flex gap-1 lg:hidden" aria-label="View">
+                  {(['chat', 'map'] as const).map((v) => (
+                    <Button
+                      key={v}
+                      size="sm"
+                      variant={view === v ? 'secondary' : 'ghost'}
+                      aria-pressed={view === v}
+                      onClick={() => setView(v)}
+                    >
+                      {v === 'chat' ? 'Chat' : 'Floor map'}
+                    </Button>
+                  ))}
+                </nav>
+              )}
+              <ThemeToggle />
+            </div>
           </header>
 
           {/* The workspace stays mounted (just hidden) on other pages, so the conversation

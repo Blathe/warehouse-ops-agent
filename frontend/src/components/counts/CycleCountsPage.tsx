@@ -225,7 +225,7 @@ function CountCard({
       aria-label={`Count at ${count.location}`}
       className={cn(
         'flex flex-col gap-3 rounded-xl border bg-card p-4 text-card-foreground',
-        open && 'border-orange-300 dark:border-orange-800',
+        open && 'border-status-count/50',
       )}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -236,7 +236,7 @@ function CountCard({
             {count.variance !== 0 && (
               <Badge
                 variant="outline"
-                className={count.variance < 0 ? 'text-red-700 dark:text-red-400' : 'text-emerald-700 dark:text-emerald-400'}
+                className={count.variance < 0 ? 'text-status-empty-ink' : 'text-status-ok-ink'}
               >
                 {formatVariance(count.variance)}
               </Badge>

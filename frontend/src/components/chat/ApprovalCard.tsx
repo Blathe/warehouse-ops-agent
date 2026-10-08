@@ -19,7 +19,7 @@ interface ApprovalCardProps {
 // until someone clicks Approve.
 export function ApprovalCard({ actions, busy, onDecide }: ApprovalCardProps) {
   return (
-    <Card className="w-full max-w-md border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/30">
+    <Card className="w-full max-w-md border-status-low/50 bg-status-low-soft/60">
       <CardHeader>
         <CardTitle>Approve replenishment?</CardTitle>
         <CardDescription>
