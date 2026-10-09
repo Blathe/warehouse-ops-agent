@@ -292,6 +292,7 @@ class Agent:
             tool=call.name,
             args=args,
             summary=summary,
+            result=summary,
             duration_ms=0,
             approval=Approval.REJECTED,
             source=LogSource.CHAT,

@@ -30,11 +30,12 @@ class ToolCallEntry(BaseModel):
     tool: str
     args: dict[str, Any]
     result_summary: str
+    result: str | None  # the full result text, None for rows logged before it was kept
     duration_ms: int
     approval: Approval
     model_call_id: int | None
     model: str | None  # the model that asked for this call, when known
-    model_call_cost_usd: float | None  # shared by every call from the same request
+    model_call_cost_usd: float | None  # shared by every call from the same response
 
 
 class ModelCallEntry(BaseModel):
@@ -51,9 +52,9 @@ class ModelCallEntry(BaseModel):
 
 
 class LogStep(BaseModel):
-    """One Claude request and the tool calls it asked for.
+    """One Claude response and the tool calls it asked for.
 
-    ``model_call`` is None for calls with no request behind them (MCP clients).
+    ``model_call`` is None for calls with no response behind them (MCP clients).
     """
 
     model_call: ModelCallEntry | None
@@ -118,6 +119,7 @@ def _tool_entry(row: ToolCallLog, model_call: ModelCallLog | None) -> ToolCallEn
         tool=row.tool,
         args=json.loads(row.args_json),
         result_summary=row.result_summary,
+        result=row.result_text,
         duration_ms=row.duration_ms,
         approval=row.approval,
         model_call_id=row.model_call_id,

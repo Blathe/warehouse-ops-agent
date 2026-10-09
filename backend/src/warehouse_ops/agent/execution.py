@@ -3,7 +3,6 @@
 Shared by the chat agent and the cycle count investigator.
 """
 
-import json
 import time
 from typing import Any
 
@@ -16,7 +15,7 @@ from warehouse_ops.agent.tools import ToolContext, ToolSpec
 from warehouse_ops.db.engine import readonly_session
 from warehouse_ops.db.models import Approval, LogSource
 from warehouse_ops.services.errors import NotFoundError, RuleViolationError
-from warehouse_ops.tool_log import record_tool_call, summarize
+from warehouse_ops.tool_log import record_tool_call, result_to_json, summarize
 
 
 class ToolTrace(BaseModel):
@@ -58,7 +57,7 @@ def execute_tool_call(
         else:
             with readonly_session(engine) as session:
                 result = spec.run(session, parsed, ctx)
-        content = to_json(result)
+        content = result_to_json(result)
         summary, ok = summarize(result), True
     except (NotFoundError, RuleViolationError, ValidationError) as exc:
         content = f"Error: {exc}"
@@ -70,6 +69,7 @@ def execute_tool_call(
         tool=call.name,
         args=args,
         summary=summary,
+        result=content,
         duration_ms=round((time.perf_counter() - started) * 1000),
         approval=approval,
         source=source,
@@ -83,9 +83,3 @@ def execute_tool_call(
         "is_error": not ok,
     }
     return block, trace
-
-
-def to_json(result: BaseModel | list[Any]) -> str:
-    if isinstance(result, BaseModel):
-        return result.model_dump_json()
-    return json.dumps([r.model_dump(mode="json") for r in result])

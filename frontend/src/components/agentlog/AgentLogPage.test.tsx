@@ -14,6 +14,7 @@ function call(overrides: Partial<ToolCallEntry> = {}): ToolCallEntry {
     tool: 'find_stock',
     args: { sku_code: '10442' },
     result_summary: '3 results',
+    result: '[{"sku_code":"10442","qty":7}]',
     duration_ms: 12,
     approval: 'n/a',
     model_call_id: 1,
@@ -88,7 +89,7 @@ const steps: LogStep[] = [
 const calls = [
   call({ id: 3, tool: 'list_short_picks', model_call_id: 2, model_call_cost_usd: 0.012 }),
   call({ id: 2, tool: 'create_replenishment_task', approval: 'rejected' }),
-  call({ id: 1 }),
+  call({ id: 1, result: null }),
 ]
 
 const fetchMock = vi.fn(async (url: string) => {
@@ -150,9 +151,17 @@ describe('AgentLogPage', () => {
 
     await userEvent.click(within(list).getAllByRole('button', { name: /^find_stock/ })[0])
 
-    expect(within(list).getByText(/"sku_code": "10442"/)).toBeInTheDocument()
-    expect(within(list).getByText('3 results')).toBeInTheDocument()
+    expect(within(list).getAllByText(/"sku_code": "10442"/)).toHaveLength(2) // args + result
+    expect(within(list).getByText(/"qty": 7/)).toBeInTheDocument() // pretty-printed
   })
+
+  it('falls back to the summary for calls logged before full results were kept', async () => {
+    vi.stubGlobal('fetch', fetchMock)
+    render(<AgentLogPage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'All calls' }))
+    const list = await screen.findByRole('list', { name: 'Tool calls' })
+    await userEvent.click(within(list).getAllByRole('button', { name: /^find_stock/ })[0])
+    expect(within(list).getByText('3 results')).toBeInTheDocument()  })
 
   it('has a flat list of all calls that counts each response\'s cost once', async () => {
     vi.stubGlobal('fetch', fetchMock)

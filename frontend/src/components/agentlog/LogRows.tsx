@@ -12,6 +12,15 @@ import { Badge } from '@/components/ui/badge'
 import type { LogStep, ModelCallEntry, ToolCallEntry } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
+// Results are stored as JSON text; errors and rejections are plain sentences.
+function prettyResult(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2)
+  } catch {
+    return text
+  }
+}
+
 // One tool call. Click it to see the arguments it was given and what came back.
 export function ToolCallRow({
   call,
@@ -60,7 +69,13 @@ export function ToolCallRow({
           </div>
           <div>
             <p className="font-medium">Result</p>
-            <p className="mt-1 break-words text-muted-foreground">{call.result_summary}</p>
+            {call.result === null ? (
+              <p className="mt-1 break-words text-muted-foreground">{call.result_summary}</p>
+            ) : (
+              <pre className="mt-1 max-h-72 overflow-auto rounded bg-muted p-2">
+                {prettyResult(call.result)}
+              </pre>
+            )}
           </div>
         </div>
       )}

@@ -113,6 +113,9 @@ async def test_calls_are_logged(client: Client, engine: Engine) -> None:
     assert [log.tool for log in last_two] == ["find_stock", "list_replenishment_needs"]
     assert last_two[0].result_summary.startswith("error: No SKU")
     assert last_two[1].result_summary.endswith("results")
+    # The full result is kept next to the summary (errors keep their message).
+    assert last_two[0].result_text == last_two[0].result_summary
+    assert last_two[1].result_text is not None and last_two[1].result_text.startswith("[")
     assert '"zone": "B"' in last_two[1].args_json
     # Stamped with the real time, even though the warehouse clock is pinned to AS_OF.
     assert all(abs(log.ts - datetime.now()) < timedelta(minutes=1) for log in last_two)
