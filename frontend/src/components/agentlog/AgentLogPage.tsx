@@ -55,7 +55,7 @@ export function AgentLogPage({ refreshKey = 0 }: AgentLogPageProps) {
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // The totals at the top follow the source and date filters (cost lives on requests, so the
+  // The totals at the top follow the source and date filters (cost lives on responses, so the
   // tool and approval filters only narrow the flat list).
   const range: LogFilters = {
     source: source || undefined,
@@ -108,7 +108,7 @@ export function AgentLogPage({ refreshKey = 0 }: AgentLogPageProps) {
         <div>
           <h2 className="text-lg font-semibold">Agent log</h2>
           <p className="text-sm text-muted-foreground">
-            Every Claude request and tool call, with what it cost.
+            Every Claude response and tool call, with what it cost.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={load}>
@@ -217,7 +217,7 @@ export function AgentLogPage({ refreshKey = 0 }: AgentLogPageProps) {
 function SummaryCards({ summary }: { summary: LogSummary | null }) {
   if (!summary) return <p className="text-sm text-muted-foreground">Loading totals...</p>
   const stats = [
-    { label: 'Claude requests', value: summary.model_calls.toLocaleString() },
+    { label: 'Claude responses', value: summary.model_calls.toLocaleString() },
     { label: 'Tool calls', value: summary.tool_calls.toLocaleString() },
     { label: 'Sessions', value: summary.sessions.toLocaleString() },
     {
@@ -316,7 +316,7 @@ function SessionRow({ session }: { session: SessionSummary }) {
         )}
         <span className="text-xs text-muted-foreground">{formatStamp(session.started_at)}</span>
         <span className="text-xs text-muted-foreground">
-          {session.model_calls} requests · {session.tool_calls} tool calls
+          {session.model_calls} responses · {session.tool_calls} tool calls
         </span>
         <span className="ml-auto text-sm font-medium tabular-nums">
           {formatCost(session.cost_usd)}
@@ -354,8 +354,8 @@ function CallList({
       </EmptyState>
     )
   }
-  // Several calls can come from one request. Show its cost on the first one listed and mark
-  // the rest, so adding up the column doesn't count a request twice.
+  // Several calls can come from one response. Show its cost on the first one listed and mark
+  // the rest, so adding up the column doesn't count a response twice.
   const seen = new Set<number>()
   return (
     <div className="flex flex-col gap-3">
@@ -364,8 +364,8 @@ function CallList({
           let note: string | undefined
           if (call.model_call_id !== null && call.model_call_cost_usd !== null) {
             note = seen.has(call.model_call_id)
-              ? 'same request'
-              : `request ${formatCost(call.model_call_cost_usd)}`
+              ? 'same response'
+              : `response ${formatCost(call.model_call_cost_usd)}`
             seen.add(call.model_call_id)
           }
           return <ToolCallRow key={call.id} call={call} note={note} showSession />
