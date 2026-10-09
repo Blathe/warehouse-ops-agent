@@ -471,7 +471,8 @@ def test_the_log_never_exposes_shelf_variance(engine: Engine) -> None:
     )
     with Session(engine) as session:
         logged_text = " ".join(
-            f"{row.args_json} {row.result_summary} {row.result_text}" for row in session.exec(select(ToolCallLog))
+            f"{row.args_json} {row.result_summary} {row.result_text}"
+            for row in session.exec(select(ToolCallLog))
         )
     assert "shelf_variance" not in everything + logged_text
     # The scenario names are the hidden cause behind each variance.
