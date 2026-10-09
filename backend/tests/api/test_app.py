@@ -182,7 +182,7 @@ def test_models_lists_the_choices_with_prices(engine: Engine) -> None:
     body = make_client(engine, FakeClient()).get("/api/models").json()
     assert body["default"] == "claude-opus-5-5"
     ids = [m["id"] for m in body["models"]]
-    assert ids == ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5"]
+    assert ids == ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
     assert all(m["input_per_mtok"] > 0 and m["label"] for m in body["models"])
 
 

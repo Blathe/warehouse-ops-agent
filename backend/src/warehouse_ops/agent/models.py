@@ -1,8 +1,7 @@
 """The Claude models the chat can use, and the request settings each one needs.
 
-Models differ in which request options they accept: Claude Haiku 4.5 rejects
-``output_config.effort``, and server-side fallbacks are only offered for the
-Opus/Sonnet 5.x models, so those options are set per model.
+Models differ in which request options they accept: server-side fallbacks are only
+offered for the Opus/Sonnet 5.x models (not Haiku 5.5), so those options are set per model.
 """
 
 from dataclasses import dataclass
@@ -45,9 +44,9 @@ _MODELS = [
     ),
     _Settings(
         ModelOption(
-            id="claude-haiku-4-5", label="Claude Haiku 4.5", input_per_mtok=1, output_per_mtok=5
+            id="claude-haiku-5-5", label="Claude Haiku 5.5", input_per_mtok=0.1, output_per_mtok=0.5
         ),
-        effort=None,
+        effort="medium",
         fallbacks=False,
     ),
 ]

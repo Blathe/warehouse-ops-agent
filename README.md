@@ -23,7 +23,7 @@ The second problem is **inventory that drifts** from what the system says: a man
 - **Every tool call is logged** (tool, arguments, result summary, duration, approval decision) and shown in the UI as a collapsible trace.
 - **Floor map.** Its own page: zones laid out with the dock and aisles, pick faces colored by stock status (OK, below min, empty, open task) or shaded by fill level, a zone filter, a hover card per bay and full stock details on click.
 - **Simulated floor crew.** A toggle in the settings menu (bottom of the sidebar; off by default, with a "Crew running" indicator in the header while it runs) finishes one approved task every 5 seconds, oldest first, and moves the stock for real, so the map and task count change live as the warehouse "works". The agent can't do this: completing a task is not a tool.
-- **Switchable models.** Chat with Claude Opus 5.5, Sonnet 5.5, or Haiku 4.5 from the UI.
+- **Switchable models.** Chat with Claude Opus 5.5, Sonnet 5.5, or Haiku 5.5 from the UI.
 - **Also works as an MCP server**, so the same tools can be used from Claude Desktop ([setup](docs/claude-desktop.md)).
 - **Chat.** Chat on the left and an activity feed of everything the agent did on the right, with a draggable divider whose position is remembered. After each reply the floor map highlights the bays the agent is working on, one click away. An **Overview** page is the landing page, and a **Tasks** page lists every replenishment task.
 - **Quick navigation.** Press **Ctrl+K** (⌘K on a Mac) to jump to a page, flip dark mode, start the crew simulation or find a pick face by location, SKU or product name. Toasts report approvals, finished crew tasks and cycle counts wherever you are in the app.
@@ -124,20 +124,22 @@ Unit tests cover the services; the evals measure the *agent*: does Claude pick t
 
 ```bash
 cd backend
-uv run run-evals --model claude-haiku-4-5   # calls the Claude API and costs money
+uv run run-evals --model claude-haiku-5-5   # calls the Claude API and costs money
 ```
 
-Results from one run per model (2026-10-02):
+Results from one run per model (2026-10-02; Haiku 5.5 on 2026-10-09):
 
 | Model | Passed | Tool selection | Arguments | Answers | Outcome | Cost (15 cases) | Mean latency |
 |---|---|---|---|---|---|---|---|
+| Claude Haiku 5.5 | 14 / 15 | 93% | 100% | 90% | 100% | $0.02 | 3.9 s |
 | Claude Haiku 4.5 | 15 / 15 | 100% | 100% | 100% | 100% | $0.09 | 3.4 s |
 | Claude Sonnet 5.5 | 15 / 15 | 100% | 100% | 100% | 100% | $0.22 | 4.7 s |
 | Claude Opus 5.5 | 14 / 15 | 93% | 100% | 100% | 100% | $0.52 | 8.4 s |
 
-- **Cost and speed scale with model size; on these cases accuracy doesn't.** Haiku matched Sonnet at about 40% of the cost and was more than twice as fast as Opus.
+- **Cost and speed scale with model size; on these cases accuracy doesn't.** Haiku 4.5 matched Sonnet at about 40% of the cost, and Haiku 5.5 costs a tenth of Sonnet's, at the price of one miss.
 - **Opus's one miss is not a safety failure.** Asked to "approve task #1", it correctly refused (no tool can approve) and said there is no such task, but it made a read call first and listed other faces. The case requires no tool calls at all, which is stricter than the rule that matters: the agent never approves or writes on its own.
-- **The evals found a real bug.** On Haiku, an early run proposed a duplicate replenishment task because `find_stock` didn't show that one was already open. The service rules would have refused it, but the proposal was wasted. Adding `open_task_id` to `find_stock` fixed it (tool selection 93% to 100%).
+- **Haiku 5.5's one miss is a behavior change.** On `multi-step-diagnose` (a diagnosis question) it went on to propose a replenishment task nobody asked for. The proposal still needs a person's approval, so nothing was written, but it is the kind of over-eager step the evals are there to catch.
+- **The evals found a real bug.** On Haiku 4.5, an early run proposed a duplicate replenishment task because `find_stock` didn't show that one was already open. The service rules would have refused it, but the proposal was wasted. Adding `open_task_id` to `find_stock` fixed it (tool selection 93% to 100%).
 - **Caveats:** one run per case, so results vary run to run. Answer checks are keyword-based, so a correct answer with unexpected wording can score as a miss; an LLM judge is the planned fix.
 
 ### Investigator evals
@@ -145,18 +147,19 @@ Results from one run per model (2026-10-02):
 A second suite checks whether the investigator finds the **true cause** of each planted discrepancy. There are 8 cases, one per discrepancy, each scored on the top-ranked cause, whether the right cause is in the top 3, the evidence cited (such as the adjusting user, or the neighbouring slot of a misplaced pallet), the tools used, and the next steps. For the one problem the data can't explain, the right answer is to say so rather than invent a cause.
 
 ```bash
-uv run run-evals --suite investigator --model claude-haiku-4-5
+uv run run-evals --suite investigator --model claude-haiku-5-5
 uv run run-evals --suite investigator --rescore evals/results/<report>.json   # regrade, no API calls
 ```
 
-Results from one run per model (2026-10-04):
+Results from one run per model (2026-10-04; Haiku 5.5 on 2026-10-09):
 
 | Investigator model | Correct root cause | Evidence cited | Right tools | Cost (8 investigations) | Mean latency |
 |---|---|---|---|---|---|
+| Claude Haiku 5.5 | 7 / 8 | 100% | 100% | $0.04 | 14 s |
 | Claude Haiku 4.5 | 7 / 8 | 100% | 100% | $0.16 | 13 s |
 | Claude Opus 5.5 | 8 / 8 | 100% | 100% | $0.94 | 14 s |
 
-- **Haiku is the value pick:** about 2¢ per investigation versus 12¢. Its one miss was a pallet counted in cases instead of units: it guessed that stock had been removed, and its arithmetic was wrong. Opus spotted the miscount and suggested checking the same clerk's other counts.
+- **Haiku 5.5 is the value pick:** about 0.4¢ per investigation versus 12¢ for Opus. It got the cases-versus-units pallet right, which Haiku 4.5 missed (it guessed stock had been removed, with wrong arithmetic). Its one miss is the unexplained 3-unit shrink: it answered "a small miscount or unrecorded pick", which is sensible but doesn't use any of the scorer's keywords, so the miss is partly the keyword check.
 - **The evals caught mistakes in the eval itself.** The first run showed that one planted problem had an accidental red herring (an unconfirmed pick of 11 next to a shortage of 12), so I fixed the seed. Later runs showed the keyword checks failing correct answers ("refill" instead of "replenishment"), so I broadened them and added `--rescore` to regrade saved reports for free. An LLM judge is the next step to make the scoring sturdier.
 
 ## Project layout

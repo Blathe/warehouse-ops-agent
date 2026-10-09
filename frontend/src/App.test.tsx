@@ -26,7 +26,7 @@ const models = {
   default: 'claude-opus-5-5',
   models: [
     { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', input_per_mtok: 4, output_per_mtok: 20 },
-    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', input_per_mtok: 1, output_per_mtok: 5 },
+    { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', input_per_mtok: 1, output_per_mtok: 5 },
   ],
 }
 
@@ -115,7 +115,7 @@ beforeEach(() => {
   tickReplies = []
   chatReply = {
     conversation_id: 'conv_1',
-    model: 'claude-haiku-4-5',
+    model: 'claude-haiku-5-5',
     status: 'done',
     reply: 'Cheap answer.',
     pending: [],
@@ -133,29 +133,29 @@ describe('App model picker', () => {
     await openSettings()
     const picker = await screen.findByLabelText('Model')
     expect(picker).toHaveValue('claude-opus-5-5')
-    expect(within(picker).getByText('Claude Haiku 4.5 ($1 / $5 per M tokens)')).toBeInTheDocument()
+    expect(within(picker).getByText('Claude Haiku 5.5 ($1 / $5 per M tokens)')).toBeInTheDocument()
   })
 
   it('sends the chosen model, remembers it and labels the reply', async () => {
     renderApp()
     await openSettings()
-    await userEvent.selectOptions(await screen.findByLabelText('Model'), 'claude-haiku-4-5')
+    await userEvent.selectOptions(await screen.findByLabelText('Model'), 'claude-haiku-5-5')
     await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
 
     expect(await screen.findByText('Cheap answer.')).toBeInTheDocument()
     expect(
-      screen.getByText('Claude Haiku 4.5', { selector: '[data-slot="message-footer"]' }),
+      screen.getByText('Claude Haiku 5.5', { selector: '[data-slot="message-footer"]' }),
     ).toBeInTheDocument()
     const chatCall = fetchMock.mock.calls.find(([url]) => url === '/api/chat/stream')
-    expect(JSON.parse(chatCall?.[1]?.body as string).model).toBe('claude-haiku-4-5')
-    expect(localStorage.getItem('warehouse-ops.model')).toBe('claude-haiku-4-5')
+    expect(JSON.parse(chatCall?.[1]?.body as string).model).toBe('claude-haiku-5-5')
+    expect(localStorage.getItem('warehouse-ops.model')).toBe('claude-haiku-5-5')
   })
 
   it('restores a remembered model', async () => {
-    localStorage.setItem('warehouse-ops.model', 'claude-haiku-4-5')
+    localStorage.setItem('warehouse-ops.model', 'claude-haiku-5-5')
     renderApp()
     await openSettings()
-    expect(await screen.findByLabelText('Model')).toHaveValue('claude-haiku-4-5')
+    expect(await screen.findByLabelText('Model')).toHaveValue('claude-haiku-5-5')
   })
 })
 
