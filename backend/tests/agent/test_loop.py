@@ -301,17 +301,18 @@ def test_switching_models_mid_conversation(engine: Engine) -> None:
     conversation = Conversation()
 
     assert agent.send(conversation, "hi").model == DEFAULT_MODEL
-    assert agent.send(conversation, "cheaper please", model="claude-haiku-4-5").model == (
-        "claude-haiku-4-5"
+    assert agent.send(conversation, "cheaper please", model="claude-haiku-5-5").model == (
+        "claude-haiku-5-5"
     )
     agent.send(conversation, "and again")  # no model given: keeps Haiku
 
     opus, haiku, haiku_again = client.messages.requests
     assert opus["model"] == DEFAULT_MODEL and opus["fallbacks"] == "default"
-    assert haiku["model"] == "claude-haiku-4-5"
-    # Haiku 4.5 rejects effort, and fallbacks are only used on the 5.x models.
-    assert "output_config" not in haiku and "fallbacks" not in haiku and "betas" not in haiku
-    assert haiku_again["model"] == "claude-haiku-4-5"
+    assert haiku["model"] == "claude-haiku-5-5"
+    # Haiku 5.5 takes effort, but server-side fallbacks aren't available for it.
+    assert haiku["output_config"] == {"effort": "medium"}
+    assert "fallbacks" not in haiku and "betas" not in haiku
+    assert haiku_again["model"] == "claude-haiku-5-5"
     # The whole history goes to the new model.
     assert len(haiku["messages"]) == 3
 

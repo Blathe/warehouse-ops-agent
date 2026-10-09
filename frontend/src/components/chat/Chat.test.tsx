@@ -166,8 +166,8 @@ describe('Chat', () => {
       { model_call: { cost_usd: 0.0200 }, tool_calls: [] },
     ]
     mockFetch({ body: turn({ reply: 'Hello there.' }) })
-    render(<Chat supervisor="Pat" model="claude-haiku-4-5" modelLabels={{ 'claude-haiku-4-5': 'Claude Haiku 4.5' }} />)
-    expect(screen.getByText('Claude Haiku 4.5')).toBeInTheDocument()
+    render(<Chat supervisor="Pat" model="claude-haiku-5-5" modelLabels={{ 'claude-haiku-5-5': 'Claude Haiku 5.5' }} />)
+    expect(screen.getByText('Claude Haiku 5.5')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'New chat' })).toBeDisabled()
 
     await userEvent.type(screen.getByLabelText('Message'), 'hi{Enter}')
