@@ -56,6 +56,7 @@ def tool_call(
         tool=tool,
         args={"sku_code": "10442"},
         summary="1 results",
+        result='[{"sku_code": "10442"}]',
         duration_ms=12,
         approval=approval,
         source=source,
@@ -121,6 +122,7 @@ def test_tool_calls_come_newest_first_with_the_cost_of_their_request(engine: Eng
     # Parallel calls share one request, so the UI can count its cost once.
     assert parallel_a.model_call_id == parallel_b.model_call_id
     assert parallel_a.args == {"sku_code": "10442"}
+    assert parallel_a.result == '[{"sku_code": "10442"}]'
 
 
 def test_tool_call_filters(engine: Engine) -> None:
@@ -210,3 +212,11 @@ def test_session_steps_group_tool_calls_under_their_request(engine: Engine) -> N
     (standalone,) = mcp_steps
     assert standalone.model_call is None and standalone.tool_calls[0].tool == "find_stock"
     assert missing == []
+
+
+def test_a_long_result_is_cut_and_marked() -> None:
+    from warehouse_ops.tool_log import MAX_RESULT_CHARS, result_text
+
+    assert result_text("[]") == "[]"
+    cut = result_text("x" * (MAX_RESULT_CHARS + 50))
+    assert cut.startswith("x" * MAX_RESULT_CHARS) and cut.endswith("(truncated)")

@@ -245,6 +245,7 @@ class ToolCallLog(SQLModel, table=True):
     tool: str
     args_json: str
     result_summary: str
+    result_text: str | None = None  # the full result; None on rows logged before it was kept
     duration_ms: int
     approval: Approval = Approval.NOT_APPLICABLE
 

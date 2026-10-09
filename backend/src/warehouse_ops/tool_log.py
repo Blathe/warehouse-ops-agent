@@ -20,6 +20,23 @@ from full pallets in reserve locations (levels 2-3). Location codes are
 zone-aisle-bay-level, e.g. A-03-12-1. Times are warehouse local time."""
 
 
+MAX_RESULT_CHARS = 20_000
+
+
+def result_to_json(result: BaseModel | list[Any]) -> str:
+    """A tool result as JSON text: a model, or a list of models."""
+    if isinstance(result, BaseModel):
+        return result.model_dump_json()
+    return json.dumps([r.model_dump(mode="json") for r in result])
+
+
+def result_text(content: str) -> str:
+    """What the log keeps of a tool result: all of it, up to MAX_RESULT_CHARS."""
+    if len(content) <= MAX_RESULT_CHARS:
+        return content
+    return content[:MAX_RESULT_CHARS] + "\n... (truncated)"
+
+
 def summarize(result: object) -> str:
     """A short description of a tool result for the log."""
     if isinstance(result, list):
@@ -71,11 +88,13 @@ def record_tool_call(
     tool: str,
     args: dict[str, Any],
     summary: str,
+    result: str | None = None,
     duration_ms: int,
     approval: Approval = Approval.NOT_APPLICABLE,
     source: LogSource = LogSource.MCP,
     model_call_id: int | None = None,
 ) -> None:
+    """Record one tool call. ``result`` is the full text Claude (or the MCP client) got back."""
     with Session(engine) as session:
         session.add(
             ToolCallLog(
@@ -86,6 +105,7 @@ def record_tool_call(
                 tool=tool,
                 args_json=json.dumps(args, default=str),
                 result_summary=summary,
+                result_text=result_text(result) if result is not None else None,
                 duration_ms=duration_ms,
                 approval=approval,
             )

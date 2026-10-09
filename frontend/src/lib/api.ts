@@ -335,6 +335,7 @@ export interface ToolCallEntry {
   tool: string
   args: Record<string, unknown>
   result_summary: string
+  result: string | null // the full result text; null on rows logged before it was kept
   duration_ms: number
   approval: Approval
   model_call_id: number | null

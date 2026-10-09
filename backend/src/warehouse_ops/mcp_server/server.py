@@ -17,7 +17,7 @@ from uuid import uuid4
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import BaseModel, Field
 from sqlalchemy import Engine
 from sqlmodel import Session
 
@@ -33,7 +33,12 @@ from warehouse_ops.services.schemas import (
     StockReport,
     Zone,
 )
-from warehouse_ops.tool_log import WAREHOUSE_CONTEXT, record_tool_call, summarize
+from warehouse_ops.tool_log import (
+    WAREHOUSE_CONTEXT,
+    record_tool_call,
+    result_to_json,
+    summarize,
+)
 
 INSTRUCTIONS = "Tools for the warehouse. " + WAREHOUSE_CONTEXT
 
@@ -49,7 +54,7 @@ def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MC
     server = MCPServer(name="warehouse-ops", instructions=INSTRUCTIONS)
     session_id = uuid4().hex
 
-    def logged[T](
+    def logged[T: BaseModel | list[Any]](
         tool: str, args: dict[str, Any], call: Callable[[Session], T], *, writes: bool = False
     ) -> T:
         """Run ``call`` in a session and record it in tool_call_log.
@@ -59,6 +64,7 @@ def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MC
         """
         started = time.perf_counter()
         summary = "error"
+        full: str | None = None
         try:
             if writes:
                 with Session(engine) as session:
@@ -67,10 +73,10 @@ def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MC
             else:
                 with readonly_session(engine) as session:
                     result = call(session)
-            summary = summarize(result)
+            summary, full = summarize(result), result_to_json(result)
             return result
         except (NotFoundError, RuleViolationError) as exc:
-            summary = f"error: {exc}"
+            summary = full = f"error: {exc}"
             raise ToolError(str(exc)) from exc
         finally:
             record_tool_call(
@@ -79,6 +85,7 @@ def create_server(engine: Engine, now: Callable[[], datetime] = clock.now) -> MC
                 tool=tool,
                 args=args,
                 summary=summary,
+                result=full,
                 duration_ms=round((time.perf_counter() - started) * 1000),
             )
 
