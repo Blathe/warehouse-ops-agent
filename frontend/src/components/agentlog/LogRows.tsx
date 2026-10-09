@@ -1,4 +1,4 @@
-import { ChevronRightIcon } from 'lucide-react'
+import { ChevronRightIcon, WrenchIcon } from 'lucide-react'
 import { useState } from 'react'
 
 import {
@@ -19,7 +19,7 @@ export function ToolCallRow({
   showSession = false,
 }: {
   call: ToolCallEntry
-  note?: string // shown at the right, e.g. the request's cost or "same request"
+  note?: string // shown at the right, e.g. the response's cost or "same response"
   showSession?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -37,6 +37,10 @@ export function ToolCallRow({
           className={cn('size-3.5 shrink-0 transition-transform', open && 'rotate-90')}
           aria-hidden
         />
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <WrenchIcon className="size-3" aria-hidden />
+          Tool call
+        </span>
         <span className="font-mono font-medium">{call.tool}</span>
         {approval && <Badge className={approval.className}>{approval.label}</Badge>}
         <span className="text-xs text-muted-foreground">{formatStamp(call.ts)}</span>
@@ -64,10 +68,18 @@ export function ToolCallRow({
   )
 }
 
-function RequestHeader({ call }: { call: ModelCallEntry }) {
+// What Claude did in this response, from the tool calls that came with it.
+function responseHint(call: ModelCallEntry, toolCount: number): string | null {
+  if (toolCount > 0) return `requested ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`
+  return call.stop_reason === 'end_turn' ? 'final answer' : null
+}
+
+function ResponseHeader({ call, toolCount }: { call: ModelCallEntry; toolCount: number }) {
+  const hint = responseHint(call, toolCount)
   return (
     <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
-      <span className="font-medium text-foreground">Claude request</span>
+      <span className="font-medium text-foreground">Claude response</span>
+      {hint && <span>{hint}</span>}
       <span>{call.model}</span>
       <span>
         {formatTokens(call.input_tokens)} in / {formatTokens(call.output_tokens)} out
@@ -80,27 +92,23 @@ function RequestHeader({ call }: { call: ModelCallEntry }) {
   )
 }
 
-// A session in order: each request with the tool calls it asked for underneath, so a request
+// A session in order: each response with the tool calls it asked for underneath, so a response
 // that asked for several tools shows its cost once.
 export function StepList({ steps }: { steps: LogStep[] }) {
   return (
     <ol className="flex flex-col gap-3" aria-label="Steps">
       {steps.map((step, index) => (
         <li key={step.model_call?.id ?? `call-${step.tool_calls[0]?.id ?? index}`}>
-          {step.model_call && <RequestHeader call={step.model_call} />}
+          {step.model_call && (
+            <ResponseHeader call={step.model_call} toolCount={step.tool_calls.length} />
+          )}
           {step.tool_calls.length > 0 ? (
             <ul className="mt-1.5 flex flex-col gap-1.5 border-l-2 pl-3">
               {step.tool_calls.map((call) => (
                 <ToolCallRow key={call.id} call={call} />
               ))}
             </ul>
-          ) : (
-            step.model_call && (
-              <p className="mt-1 pl-3 text-xs text-muted-foreground">
-                No tools: {step.model_call.stop_reason === 'end_turn' ? 'final answer' : 'reply'}
-              </p>
-            )
-          )}
+          ) : null}
         </li>
       ))}
     </ol>

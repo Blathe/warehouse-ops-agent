@@ -84,7 +84,7 @@ const steps: LogStep[] = [
   },
 ]
 
-// Two calls from one request, then one from another, newest first.
+// Two calls from one response, then one from another, newest first.
 const calls = [
   call({ id: 3, tool: 'list_short_picks', model_call_id: 2, model_call_cost_usd: 0.012 }),
   call({ id: 2, tool: 'create_replenishment_task', approval: 'rejected' }),
@@ -113,7 +113,7 @@ describe('AgentLogPage', () => {
 
     const totals = await screen.findByRole('region', { name: 'Totals' })
     expect(within(totals).getByLabelText('Total cost')).toHaveTextContent('$2.0183')
-    expect(within(totals).getByText('Claude requests').nextSibling).toHaveTextContent('3')
+    expect(within(totals).getByText('Claude responses').nextSibling).toHaveTextContent('3')
     expect(within(totals).getByText('Tool calls').nextSibling).toHaveTextContent('5')
     expect(within(totals).getByText('Tokens in / out').nextSibling).toHaveTextContent(
       '1.00M / 300',
@@ -122,7 +122,7 @@ describe('AgentLogPage', () => {
     expect(within(totals).getByText('claude-opus-5-5 $0.0183')).toBeInTheDocument()
   })
 
-  it('lists sessions with their cost and opens one to show requests and tool calls', async () => {
+  it('lists sessions with their cost and opens one to show responses and tool calls', async () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<AgentLogPage />)
 
@@ -134,7 +134,9 @@ describe('AgentLogPage', () => {
     await userEvent.click(chat)
 
     const list = await screen.findByRole('list', { name: 'Steps' })
-    expect(within(list).getByText('Claude request')).toBeInTheDocument()
+    expect(within(list).getByText('Claude response')).toBeInTheDocument()
+    expect(within(list).getByText('requested 2 tools')).toBeInTheDocument()
+    expect(within(list).getAllByText('Tool call')).toHaveLength(2)
     expect(within(list).getByText('$0.0060')).toBeInTheDocument() // once, not per tool call
     expect(within(list).getByText('Rejected')).toBeInTheDocument()
     expect(requested()).toContain('/api/agent-log/sessions/abc12345def')
@@ -152,16 +154,16 @@ describe('AgentLogPage', () => {
     expect(within(list).getByText('3 results')).toBeInTheDocument()
   })
 
-  it('has a flat list of all calls that counts each request\'s cost once', async () => {
+  it('has a flat list of all calls that counts each response\'s cost once', async () => {
     vi.stubGlobal('fetch', fetchMock)
     render(<AgentLogPage />)
     await userEvent.click(await screen.findByRole('button', { name: 'All calls' }))
 
     const list = await screen.findByRole('list', { name: 'Tool calls' })
     expect(within(list).getAllByRole('listitem')).toHaveLength(3)
-    expect(within(list).getByText('request $0.0120')).toBeInTheDocument()
-    expect(within(list).getByText('request $0.0060')).toBeInTheDocument()
-    expect(within(list).getByText('same request')).toBeInTheDocument()
+    expect(within(list).getByText('response $0.0120')).toBeInTheDocument()
+    expect(within(list).getByText('response $0.0060')).toBeInTheDocument()
+    expect(within(list).getByText('same response')).toBeInTheDocument()
   })
 
   it('sends the filters to the backend', async () => {

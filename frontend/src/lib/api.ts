@@ -339,7 +339,7 @@ export interface ToolCallEntry {
   approval: Approval
   model_call_id: number | null
   model: string | null
-  model_call_cost_usd: number | null // shared by every call from the same request
+  model_call_cost_usd: number | null // shared by every call from the same response
 }
 
 export interface ModelCallEntry {
@@ -355,7 +355,7 @@ export interface ModelCallEntry {
   stop_reason: string | null
 }
 
-// One Claude request and the tool calls it asked for (model_call is null for MCP calls).
+// One Claude response and the tool calls it asked for (model_call is null for MCP calls).
 export interface LogStep {
   model_call: ModelCallEntry | null
   tool_calls: ToolCallEntry[]
