@@ -9,9 +9,8 @@ from mcp.client import Client
 from sqlalchemy import Engine
 from sqlmodel import Session, select
 
-from tests.conftest import AS_OF, make_memory_engine
+from tests.conftest import AS_OF, fresh_seeded_engine
 from warehouse_ops.db.models import ReplenishmentStatus, ReplenishmentTask, ToolCallLog
-from warehouse_ops.db.seed import seed_database
 from warehouse_ops.mcp_server.server import create_server
 
 pytestmark = pytest.mark.anyio  # run the async tests on asyncio
@@ -20,8 +19,7 @@ pytestmark = pytest.mark.anyio  # run the async tests on asyncio
 @pytest.fixture(scope="module")
 def engine() -> Engine:
     # Own database, because these tests write to tool_call_log.
-    engine = make_memory_engine()
-    seed_database(engine, seed=42, as_of=AS_OF)
+    engine = fresh_seeded_engine()
     return engine
 
 

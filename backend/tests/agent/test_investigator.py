@@ -8,14 +8,13 @@ from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from tests.agent.fakes import FakeClient, refusal, text_reply, tool_reply
-from tests.conftest import AS_OF, make_memory_engine
+from tests.conftest import AS_OF, fresh_seeded_engine
 from warehouse_ops.agent.investigator import (
     DEFAULT_INVESTIGATOR_MODEL,
     TOOL_PARAMS,
     Investigator,
 )
 from warehouse_ops.db.models import InvestigationStatus, LogSource, ModelCallLog, ToolCallLog
-from warehouse_ops.db.seed import seed_database
 from warehouse_ops.services.cycle_counts import CycleCountOut, simulate_cycle_count
 
 FINDINGS: dict[str, Any] = {
@@ -33,8 +32,7 @@ FINDINGS: dict[str, Any] = {
 
 @pytest.fixture
 def engine() -> Engine:
-    engine = make_memory_engine()
-    seed_database(engine, seed=42, as_of=AS_OF)
+    engine = fresh_seeded_engine()
     return engine
 
 
