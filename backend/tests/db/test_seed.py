@@ -5,7 +5,7 @@ from sqlalchemy import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from tests.conftest import AS_OF, make_memory_engine
+from tests.conftest import AS_OF, fresh_seeded_engine, make_memory_engine
 from warehouse_ops.db.catalog import CATEGORIES
 from warehouse_ops.db.models import (
     Inventory,
@@ -167,6 +167,18 @@ def test_same_seed_gives_same_data(seeded: tuple[Engine, SeedSummary]) -> None:
     again = make_memory_engine()
     seed_database(again, seed=42, as_of=AS_OF)
     assert _snapshot(again) == _snapshot(seeded[0])
+
+
+def test_fresh_copy_matches_the_seed_and_writes_stay_private(
+    seeded: tuple[Engine, SeedSummary],
+) -> None:
+    copy = fresh_seeded_engine()
+    assert _snapshot(copy) == _snapshot(seeded[0])
+    with Session(copy) as session:
+        session.exec(select(Sku)).first().description = "changed"  # type: ignore[union-attr]
+        session.commit()
+    assert _snapshot(copy) != _snapshot(seeded[0])
+    assert _snapshot(fresh_seeded_engine()) == _snapshot(seeded[0])
 
 
 def test_different_seed_gives_different_data(seeded: tuple[Engine, SeedSummary]) -> None:

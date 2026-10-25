@@ -19,9 +19,14 @@ export function ModelPicker({ models, value, onChange }: ModelPickerProps) {
     >
       {models.map((model) => (
         <NativeSelectOption key={model.id} value={model.id}>
-          {model.label} (${model.input_per_mtok} / ${model.output_per_mtok} per M tokens)
+          {model.label} ({usd(model.input_per_mtok)} / {usd(model.output_per_mtok)} per M tokens)
         </NativeSelectOption>
       ))}
     </NativeSelect>
   )
+}
+
+// Whole dollars stay short ($4); fractions show cents ($0.10, not $0.1).
+function usd(amount: number): string {
+  return Number.isInteger(amount) ? `$${amount}` : `$${amount.toFixed(2)}`
 }

@@ -7,7 +7,7 @@ from sqlalchemy import Engine
 from sqlmodel import Session, select
 
 from tests.agent.fakes import FakeClient, refusal, text_reply, tool_reply
-from tests.conftest import AS_OF, make_memory_engine
+from tests.conftest import AS_OF, fresh_seeded_engine
 from warehouse_ops.agent.loop import (
     MAX_STEPS,
     Agent,
@@ -24,15 +24,13 @@ from warehouse_ops.db.models import (
     ReplenishmentTask,
     ToolCallLog,
 )
-from warehouse_ops.db.seed import seed_database
 from warehouse_ops.services.replenishment import list_replenishment_needs
 
 
 @pytest.fixture
 def engine() -> Engine:
     # A fresh database per test, because these tests create tasks and log rows.
-    engine = make_memory_engine()
-    seed_database(engine, seed=42, as_of=AS_OF)
+    engine = fresh_seeded_engine()
     return engine
 
 
@@ -169,8 +167,7 @@ def test_approved_and_rejected_writes_link_to_the_model_call_that_asked(
     engine: Engine,
 ) -> None:
     for approve, expected in ((True, Approval.APPROVED), (False, Approval.REJECTED)):
-        engine = make_memory_engine()
-        seed_database(engine, seed=42, as_of=AS_OF)
+        engine = fresh_seeded_engine()
         client = FakeClient(
             tool_reply(("tu_1", "create_replenishment_task", create_args(engine))),
             text_reply("Ok."),

@@ -13,18 +13,16 @@ from sqlmodel import Session, select
 from tests.agent.fakes import FakeClient, text_reply, tool_reply
 from tests.agent.test_investigator import FINDINGS
 from tests.agent.test_loop import create_args
-from tests.conftest import AS_OF, make_memory_engine
+from tests.conftest import AS_OF, fresh_seeded_engine
 from warehouse_ops.agent.investigator import Investigator
 from warehouse_ops.api.app import create_app
 from warehouse_ops.db.models import ShelfVariance, ToolCallLog
-from warehouse_ops.db.seed import seed_database
 from warehouse_ops.services.cycle_counts import simulate_cycle_count
 
 
 @pytest.fixture
 def engine() -> Engine:
-    engine = make_memory_engine()
-    seed_database(engine, seed=42, as_of=AS_OF)
+    engine = fresh_seeded_engine()
     return engine
 
 

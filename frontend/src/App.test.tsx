@@ -26,7 +26,7 @@ const models = {
   default: 'claude-opus-5-5',
   models: [
     { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', input_per_mtok: 4, output_per_mtok: 20 },
-    { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', input_per_mtok: 1, output_per_mtok: 5 },
+    { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', input_per_mtok: 0.1, output_per_mtok: 0.5 },
   ],
 }
 
@@ -133,7 +133,7 @@ describe('App model picker', () => {
     await openSettings()
     const picker = await screen.findByLabelText('Model')
     expect(picker).toHaveValue('claude-opus-5-5')
-    expect(within(picker).getByText('Claude Haiku 5.5 ($1 / $5 per M tokens)')).toBeInTheDocument()
+    expect(within(picker).getByText('Claude Haiku 5.5 ($0.10 / $0.50 per M tokens)')).toBeInTheDocument()
   })
 
   it('sends the chosen model, remembers it and labels the reply', async () => {

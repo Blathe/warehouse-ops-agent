@@ -7,10 +7,9 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 from tests.agent.fakes import FakeClient, text_reply, tool_reply
-from tests.conftest import AS_OF, make_memory_engine
+from tests.conftest import fresh_seeded_engine
 from warehouse_ops.agent.models import MODEL_OPTIONS
 from warehouse_ops.agent.pricing import cost_usd
-from warehouse_ops.db.seed import seed_database
 from warehouse_ops.evals.cases import EvalCase, ExpectedCall
 from warehouse_ops.evals.runner import (
     CaseResult,
@@ -26,8 +25,7 @@ MODEL = "claude-opus-5-5"
 
 @pytest.fixture
 def engine() -> Engine:
-    engine = make_memory_engine()
-    seed_database(engine, seed=42, as_of=AS_OF)
+    engine = fresh_seeded_engine()
     return engine
 
 
@@ -142,8 +140,7 @@ def test_api_failure_is_an_error_not_a_failure(engine: Engine) -> None:
 
 def test_run_evals_reseeds_after_a_writing_case() -> None:
     # Facts are built from the seeded database; the second case must still find a free face.
-    probe = make_memory_engine()
-    seed_database(probe, seed=42, as_of=AS_OF)
+    probe = fresh_seeded_engine()
     args = create_args(probe)
     cases = [
         EvalCase(id="writes", question="Move stock", approve_writes=True, expect_task_created=True),
